@@ -164,6 +164,14 @@ RegisterNetEvent('DP-Inventory:server:openVending', function(data)
     OpenShop(src, 'vending')
 end)
 
+RegisterNetEvent('DP-Inventory:server:OpenInventory', function(type, targetId)
+    local src = source
+    if type == "otherplayer" then
+        -- Llamamos a la función que ya tienes creada en functions.lua
+        OpenInventoryById(src, targetId)
+    end
+end)
+
 RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
     local src = source
     local QBPlayer = QBCore.Functions.GetPlayer(src)
@@ -613,23 +621,19 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                 if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'stacked item') then
                     AddItem(toId, toItem.name, toAmount, toSlot, toItem.info, 'stacked item')
 
-                    -- [[ INICIO INTEGRACIÓN DP-REALMONEY ]] --
                     if GetResourceState("DP-RealMoney") ~= 'missing' then
                         exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
                         exports['DP-RealMoney']:UpdateCash(toId, toItem.name, toAmount, 'add')
                     end
-                    -- [[ FIN INTEGRACIÓN ]] --
                 end
             elseif not toItem and toAmount < fromAmount then
                 if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'split item') then
                     AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'split item')
 
-                    -- [[ INICIO INTEGRACIÓN DP-REALMONEY ]] --
                     if GetResourceState("DP-RealMoney") ~= 'missing' then
                         exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
                         exports['DP-RealMoney']:UpdateCash(toId, fromItem.name, toAmount, 'add')
                     end
-                    -- [[ FIN INTEGRACIÓN ]] --
                 end
             else
                 if toItem then
@@ -641,27 +645,137 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                         AddItem(toId, fromItem.name, fromItemAmount, toSlot, fromItem.info, 'swapped item')
                         AddItem(fromId, toItem.name, toItemAmount, fromSlot, toItem.info, 'swapped item')
 
-                        -- [[ INICIO INTEGRACIÓN DP-REALMONEY ]] --
                         if GetResourceState("DP-RealMoney") ~= 'missing' then
                             exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, fromItemAmount, 'remove')
                             exports['DP-RealMoney']:UpdateCash(toId, toItem.name, toItemAmount, 'remove')
                             exports['DP-RealMoney']:UpdateCash(toId, fromItem.name, fromItemAmount, 'add')
                             exports['DP-RealMoney']:UpdateCash(fromId, toItem.name, toItemAmount, 'add')
                         end
-                        -- [[ FIN INTEGRACIÓN ]] --
                     end
                 else
                     if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'moved item') then
                         AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'moved item')
 
-                        -- [[ INICIO INTEGRACIÓN DP-REALMONEY ]] --
                         if GetResourceState("DP-RealMoney") ~= 'missing' then
                             exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
                             exports['DP-RealMoney']:UpdateCash(toId, fromItem.name, toAmount, 'add')
                         end
-                        -- [[ FIN INTEGRACIÓN ]] --
                     end
                 end
             end
         end
     end)
+
+-- ==========================================================================
+-- SISTEMA ADMIN INTEGRADO EN NUI
+-- ==========================================================================
+QBCore.Functions.CreateCallback('DP-Inventory:server:IsAdmin', function(source, cb)
+    cb(QBCore.Functions.HasPermission(source, 'admin') or QBCore.Functions.HasPermission(source, 'god'))
+end)
+
+QBCore.Functions.CreateCallback('DP-Inventory:server:GetAdminMasterData', function(source, cb)
+    if not (QBCore.Functions.HasPermission(source, 'admin') or QBCore.Functions.HasPermission(source, 'god')) then
+        return cb(false)
+    end
+
+    local players = {}
+    for _, v in pairs(QBCore.Functions.GetPlayers()) do
+        local target = QBCore.Functions.GetPlayer(v)
+        if target then
+            players[#players + 1] = {
+                id = v,
+                name = target.PlayerData.charinfo.firstname .. ' ' .. target.PlayerData.charinfo.lastname,
+                steam = GetPlayerName(v)
+            }
+        end
+    end
+
+    MySQL.query('SELECT identifier FROM inventories', {}, function(result)
+        local trunks, gloveboxes, stashes = {}, {}, {}
+        if result then
+            for i = 1, #result do
+                local id = result[i].identifier
+                if string.find(id, "^trunk%-") then
+                    trunks[#trunks + 1] = id
+                elseif string.find(id, "^glovebox%-") then
+                    gloveboxes[#gloveboxes + 1] = id
+                else
+                    stashes[#stashes + 1] = id
+                end
+            end
+        end
+        cb({
+            players = players,
+            trunks = trunks,
+            gloveboxes = gloveboxes,
+            stashes = stashes
+        })
+    end)
+end)
+
+RegisterNetEvent('DP-Inventory:server:ForceOpenStash', function(identifier)
+    local src = source
+    if not (QBCore.Functions.HasPermission(src, 'admin') or QBCore.Functions.HasPermission(src, 'god')) then
+        return
+    end
+    OpenInventory(src, identifier)
+end)
+
+-- ==========================================================================
+-- PREFERENCIAS DE POSICIÓN DEL INVENTARIO (BASE DE DATOS)
+-- ==========================================================================
+QBCore.Functions.CreateCallback('DP-Inventory:server:GetPosition', function(source, cb)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then
+        return cb('bottom')
+    end
+
+    local result = MySQL.Sync.fetchAll('SELECT inventory_position FROM dp_preferences WHERE citizenid = ?',
+        {Player.PlayerData.citizenid})
+    if result[1] and result[1].inventory_position then
+        cb(result[1].inventory_position)
+    else
+        cb('bottom')
+    end
+end)
+
+RegisterNetEvent('DP-Inventory:server:SavePosition', function(pos)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then
+        return
+    end
+
+    MySQL.Async.execute(
+        'INSERT INTO dp_preferences (citizenid, inventory_position) VALUES (?, ?) ON DUPLICATE KEY UPDATE inventory_position = ?',
+        {Player.PlayerData.citizenid, pos, pos})
+end)
+
+-- Obtener la preferencia de movimiento
+QBCore.Functions.CreateCallback('DP-Inventory:server:GetMovePref', function(source, cb)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then
+        return cb(false)
+    end
+
+    local result = MySQL.Sync.fetchAll('SELECT move_while_open FROM dp_preferences WHERE citizenid = ?',
+        {Player.PlayerData.citizenid})
+    if result[1] and result[1].move_while_open ~= nil then
+        cb(result[1].move_while_open == 1)
+    else
+        cb(false)
+    end
+end)
+
+-- Guardar la preferencia de movimiento
+RegisterNetEvent('DP-Inventory:server:SaveMovePref', function(status)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then
+        return
+    end
+
+    local val = status and 1 or 0
+    MySQL.Async.execute('UPDATE dp_preferences SET move_while_open = ? WHERE citizenid = ?',
+        {val, Player.PlayerData.citizenid})
+end)

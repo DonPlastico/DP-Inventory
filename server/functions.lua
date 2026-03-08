@@ -1457,14 +1457,17 @@ function OpenInventoryById(source, targetId)
         CloseInventory(targetId)
     end
 
+    local targetName = TargetPlayer.PlayerData.charinfo.firstname .. ' ' .. TargetPlayer.PlayerData.charinfo.lastname
+
+    -- Sacamos el nombre y apellido del personaje
     local formattedInventory = {
         name = 'otherplayer-' .. targetId,
-        label = GetPlayerName(targetId),
+        label = targetName,
         maxweight = Config.MaxWeight,
         slots = Config.MaxSlots,
         inventory = TargetPlayer.PlayerData.items
     }
-    Wait(1500)
+
     Player(targetId).state.inv_busy = true
     TriggerClientEvent('DP-Inventory:client:openInventory', source, QBPlayer.PlayerData.items, formattedInventory)
 end

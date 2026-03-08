@@ -36,6 +36,7 @@ DP-Inventory
 └── 📄 migrate.sql
 
 **Reglas de Trabajo:**
+
 1. **Código Custom:** Como es una reescritura masiva, NO asumas que el código funciona exactamente igual que el `qb-inventory` normal. Si necesitas saber cómo hace algo mi script, pídeme que te pase el archivo o la función correspondiente.
 2. **Estética UI:** El frontend tiene un diseño muy específico (oscuro, bordes limpios, iconos Iconify, variables CSS como `--bg-panel` o `--primary`). Cualquier código HTML/CSS que me des debe encajar perfectamente con esta estética.
 3. **NUI Callbacks:** La comunicación entre el NUI y Lua se hace a través de `axios.post('https://DP-Inventory/...', {...})`. 
@@ -60,52 +61,36 @@ Si has entendido el proyecto, la estructura y las reglas, responde ÚNICAMENTE c
 
 
 
-# REPARACIÓN DE BUG: ARMA EQUIPADA AL MOVER ITEM (EXPLOIT)
-
-**Descripción del error:**
-Tengo un problema de lógica de juego: Cuando un jugador tiene un arma sacada (en las manos del Ped) y abre el inventario, si mueve esa misma arma de un slot a otro (o a otro inventario), el arma permanece visualmente en las manos del jugador. Esto permite disparar armas que técnicamente ya no están en el slot activo o que incluso han sido guardadas en un maletero.
-
-**Lógica de solución deseada:**
-Quiero que en el momento en que se detecte que el jugador está moviendo un ítem de tipo "weapon" (un arma), el script fuerce al personaje a guardar el arma (desequipar) de forma inmediata. No debe ser posible tener el arma en la mano mientras ese ítem específico está siendo desplazado por la UI.
-
-**Archivos involucrados:**
-- `ui/script.js`: Donde se gestiona el inicio del arrastre (Drag Start) o el soltado (Drop).
-- `client/main_client.lua`: Donde reside la lógica que controla qué tiene el Ped en la mano.
-
-**METODOLOGÍA DE TRABAJO (PASO A PASO):**
-Vamos a resolver esto por partes para asegurar que la sincronización es perfecta.
-En tu primera respuesta, **analiza primero el Frontend (`script.js`)**:
-1. Identifica en qué función de Vue.js (probablemente `onDragStart` o similar) debo insertar una comprobación para ver si el ítem es un arma.
-2. Dame el código para enviar un `axios.post` hacia el cliente indicando que se debe desequipar el arma actual.
-3. Dime qué código necesito añadir en `main_client.lua` para recibir ese evento y forzar al Ped a enfundar el arma (`SetCurrentPedWeapon` a `heavy_armor` o similar, o la función de QB-Core correspondiente).
 
 
 
+ARREGLOS/IDEAS:
+* PAGE/TAB INVENTARIO:
+  - HACER EL SISTEMA DE MOCHILAS, QUE EXISTAN 4 MOCHILAS DE EXPANSION DE SLOTS DISTINTAS Y VARIAS DE MOCHILAS CUSTOM. EXPLICACIÓN MOCHILAS EXPANSORAS (¡ESTOS SLOTS EXTRA DEBEN SER VISIBLES EN EL OTHER INVENTORY DEL JUGADOR CUANDO SE ABRA DESDE EL PANEL ADMIN!):
+    · MOCHILA 1: DARÁ AL INVENTARIO DEL JUGADOR 5 SLOTS MAS ABAJO DEL TODO CON UNA SEPARACION CON TEXTO INDICANDO QUE ES LA PARTE DE MOCHILA Y ARRIBA LA PARTE DEL INVENTARIO DEL JUGADOR, ESTE SE GUARDARAN NO SE GUARDARAN EN CASO DE QUE SE QUITE LA MOCHILA, ES DECIR QUE SI YO PONGO ALGUN ITEM EN ESOS SLOTS, SIEMPRE ESTARAN AHI MIENTRAS LA MOCHILA PERMANEZCA EN EL SLOT, EN CASO DE QUITARSE LA MOCHILA, ESOS ITEMS QUE ESTABAN EN LOS SLOTS DE EXPANSION SE TIRARAN AL SUELO AL INSTANTE EN CUANTO SE QUITE LA MOCHILA, PERMITIENDO ASÍ QUE EL JUGADOR PUEDA RECUPERAR SUS ITEMS DEL SUELO.
+    · MOCHILA 2: EXACTAMENTE LO MISMO QUE EL ANTERIOR CON LA DIFERENCIA QUE ESTE TE OTORGARÁ 10 SLOTS.
+    · MOCHILA 3: EXACTAMENTE LO MISMO QUE EL ANTERIOR CON LA DIFERENCIA QUE ESTE TE OTORGARÁ 15 SLOTS.
+    · MOCHILA 4: EXACTAMENTE LO MISMO QUE EL ANTERIOR CON LA DIFERENCIA QUE ESTE TE OTORGARÁ 20 SLOTS. 
+    ESTAS MOCHILAS NO AFECTARAN AL PESO, LOS ITEMS QUE ESTEN EN ESTOS SLOS DE LAS MOCHILAS DEBERÁN, PESAR LO MISMO QUE SI LO METO EN CUALQUIER OTRO SLOT A DIFERENCIA DE LAS MOCHILAS CUSTOMS QUE ESTE SE DIVIDE EN 3 EL PESO TOTAL DEL CONTENIDO DE LA MOCHILA.
+  - EXPLICACIÓN MOCHILAS CUSTOM:
+    · ESTE ES COMO OTROS SCRIPTS PERO A MI ESTILO, SON ITEMS DE MOCHILAS (TANTOS COMO QUIERA) QUE AL USARSE EL ITEM, ABRIRA UN INVENTARIO (QUE DEBE GUARDARSE PARA SIEMPRE EN LA BASE DE DATOS) COMO EL DE MALETERO/STASH/GUANTERA QUE SE GUARDARA COMO MOCHILA, QUE ESTOS TENDRAN TANTOS ESPACIOS COMO QUIERA METER EN EL QB-CORE/SHARED/ITEMS.LUA A CADA MOCHILA... ESTOS LO BUENO QUE TIENEN ES QUE SI YO LE DOY LA MOCHILA QUE YA EH USADO, CRAERA UN INVENTARIO ASOCIADO A ESE ITEM EN CONCRETO, SI YO GUARDO ALGO, Y SE LO DOY A OTRO JUGADOR, AL ABRIR ESA MOCHILA TENDRA ESE ITEM, PERO HAY QUE TENER EN CUENTA QUE EL MISMO ITEM PUEDE TENERLO 200 PERSONAS A LA VEZ, POR LO QUE UNA VEZ DE ABRA POR PRIMERA VEZ ESA MOCHILA ESE ITEM DE ESE JUGADOR DEBE QUEDAR ASOCIADO A ESE INVENTARIO, PARA QUE SI EL RESTO DE JUGADORES ABREN OTRAS MOCHILAS QUE SON EL MISMO ITEM, TENGAN INVENTARIOS DISTINTOS, Y ASÍ TENER 2000 MOCHILAS QUE SON EL MISMO ITEM, PERO DIFERENTE ID DE MOCHILA, CON DIFERENTES ITEMS EN SU INTERIOR. CON EL HECHO DE METER DISTINTAS MOCHILAS ES QUE EL PROPIO OWNER/PROGRAMADOR, PUEDA PONER EN EL QB-CORE/SHARED/ITEMS.LUA QUE LA MOCHILA CUSTOM 1 TENGA 6 SLOTS, QUE LA 2 TENGA 700 LA 3 1 Y ESTO SI QUE SON ITEMS DISTINTOS, DISTINTAS MOCHILAS CON DISTINTOS PESOS, CON DISTINTOS IMAGENES ETC... A DIFERENCIA DE LAS MOCHILAS DE AUMENTO DE SLOTS, ESTAS DEBEN CALCULAR LOS ITEMS QUE TENGA DENTRO, VER EL PESO DE CADA UNO DE ELLOS, Y DIVIDIRLO POR 3, Y ESA MOCHILA DEBERA PESAR ESO... ES DECIR, QUE SI YO METO DENTRO DE ESTA MOCHILA 2 ITEMS DE 5 KG, LA MOCHILA CON SU CONTENIDO DEBE PESAR EN TOTAL 5/3 Y ESO SERÁ LO QUE PESE LA MOCHILA CON ESOS ITEMS, SI METO MAS ITEMS, HACE EL CALCULO, SI QUITO ITEMS HACE EL CALCULO.
 
+* PAGE/TAB PERSONAJE:
+    - BOTÓN DE DOCUMENTOS, HAY QUE REPLICAR EL SCRIPT DE K5_DOCUMENTS DE 0 Y METER UN EXPORT A ESTE BOTÓN.
 
+* PAGE/TAB ARMAS:
+    - ARREGLAR LAS POSICIONES DE LAS PISTOLAS EN POSICIONAMIENTO (BONES).
 
+* PAGE/TAB VEHÍCULO:
+    - HACER QUE RADIO VAYA JUNTO AL DP-BOOMBOX (CREARLO CON EL SCRIPT BOOMBOX Y HACER EL EXPORT)
+    - MENÚ DE LLAVES, QUE AL DARLE AL BOTÓN ME QUITE TODOS LOS BOTONES Y ME SALGA UNA LISTA (COMO EN EL PANEL DE ADMIN) CON BOTONES PARA DAR LLAVES A JUGADORES CERCANOS, CONTROLAR QUIEN TIENE LLAVES DEL VEHICULO ETC... (EXPORT AL NUEVO SISTEMA DE DP-VEHICLEKYES, PROXIMAMENTE)
+    - CREAR DENTRO DEL DP-UTILITYLIB UN ARCHIVO CON EXPORTS PARA QUE EL VEHICULO LITERALMENTE PUEDA PASAR DE SU CONDUCCION NORMAL, AL DRIFT Y VICEVERSA, QUE EL DRIFT SEA EXAGERADO...
+    - LIMITADOR Y CRUCERO HACERLO FUNCIONAR CON EL DP-HUD (HACER EXPORTS).
 
+* PAGE/TAB AJUSTES
+    - SONIDO ACTIVABLE/DESACTIVABLE (PONERLE SONIDOS CUANDO MUEVES ITEMS, CUANDO ARRASTRAS, CUANDO CAMBIAS ENTRE PAGES/TABS, CUANDO ABRES/CIERRAS MALETEROS/INVETARIO PROPIO/INVETARIO DE OTRO JUGADOR/STASHES/GUANTERAS/DROPS)
+    - MOVER EL INVENTARIO (ESTE PODRE MOVER EL INVENTARIO DENTRO DE LOS LIMITES DE LA PANTALLA, QUE SE GUARDARA EN LA BASE DE DATOS, IRA CON % TANTO EL TOP COMO EL LEFT... OBVIAMENTE EL INVENTARIO SECUNDARIO/STASH/DROP/GUANTERA/MALETERO SE IRA CON ESTE, DEPENDIENDO DEL QUE TENGA SELECCIONADO EL JUGADOR. TAMBIEN SE IRA TODO DINAMICAMENTE LOS SLOTS DEL ARMOR/MOCHILA Y TABS)
+    
 
-
-
-
-
-
-# BUG CRÍTICO: ARMA "FANTASMA" (DUPEO VISUAL Y DE COMBATE)
-
-**Descripción del Error:**
-Si un jugador tiene un arma equipada y el ítem asociado a esa arma es eliminado de su inventario por cualquier medio externo (comando administrativo, robo de otro jugador, o soltando el ítem mediante `Drop`), el modelo del arma permanece en las manos del Ped y sigue siendo funcional. Esto permite que una sola arma sea usada por varias personas si se la pasan o la tiran.
-
-**Objetivo:**
-Crear un sistema de verificación en `client/main_client.lua` que haga lo siguiente:
-1. Detectar qué arma tiene el jugador en la mano actualmente.
-2. Comprobar si existe un ítem correspondiente en el inventario del jugador (`PlayerJob.PlayerData.items` en QB-Core o mediante la tabla local que maneje `DP-Inventory`).
-3. Si el arma en la mano NO tiene un ítem que la respalde en el inventario, forzar al jugador a desequiparla inmediatamente (`RemoveWeaponFromPed` o `SetCurrentPedWeapon` a `GetHashKey("weapon_unarmed")`).
-
-**METODOLOGÍA DE TRABAJO:**
-Vamos a trabajar sobre la lógica del cliente en Lua, ya que es la más eficiente para este chequeo.
-
-En tu primera respuesta:
-1. Explícame cuál es la mejor forma de implementar esto: ¿Un hilo (`CreateThread`) con un bucle de comprobación cada X segundos, o engancharse a los eventos de actualización de inventario de QB-Core?
-2. Dame el código para `client/main_client.lua` que realice esta validación de forma optimizada para no afectar al rendimiento (ms/resmon).
-3. Asegúrate de que el código identifique correctamente el arma comparando el hash de la mano con el nombre del ítem (ej: `weapon_pistol`).
+* PAGE/TAB INVENTARIO MIO/OTRO JUGADOR/STASH/GLOVEBOX/TRUNK/DROP/BACKPACK:
+    - METER EN TODOS LOS INVENTARIOS UN SEARCH, EN ESTE MOSTRARÁ TODO EL INVENTARIO SOLO QUE LOS PONDRÁ COMO EN OSCUROS, Y RESALTARA EN BRILLANTE EL ITEM QUE ESTAS BUESCANDO EN CASO DE TENERLO EN EL INVENTARIO, SI NO ESTÁ, PUES TODOS LOS SLOTS ESTARÁN OSCURECIDOS...

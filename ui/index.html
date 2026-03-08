@@ -18,9 +18,10 @@
 </head>
 
 <body>
-    <div id="app">
-        <div class="inventory-container" v-if="isInventoryOpen" @mousemove="drag" @mouseup="endDrag"
-            @mousedown="containerMouseDownAction">
+    <div id="app" @click="closeDropdowns">
+        <div class="inventory-container" v-if="isInventoryOpen"
+            :class="[{ 'cursor-mode': cursorModeActive }, 'layout-' + inventoryPosition]" @mousemove="drag"
+            @mouseup="endDrag" @mousedown="containerMouseDownAction">
             <div class="inventory-section player-inventory-section"
                 :class="{ 'centered-inventory-section': shouldCenterInventory }">
 
@@ -44,6 +45,11 @@
                     </div>
                     <div class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="changeTab('settings')">
                         <iconify-icon icon="mdi:cog" class="tab-icon"></iconify-icon>
+                    </div>
+
+                    <div class="tab-btn admin-tab" v-if="isAdmin" :class="{ active: activeTab === 'admin' }"
+                        @click="changeTab('admin')">
+                        <iconify-icon icon="mdi:shield-crown" class="tab-icon"></iconify-icon>
                     </div>
                 </div>
 
@@ -103,413 +109,707 @@
                     </div>
                 </div>
 
-                <div class="tab-content-wrapper" v-show="activeTab === 'inventory'">
-                    <div class="page-header modern-header" style="border-bottom: none;">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:backpack"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>INVENTARIO</h2>
-                                <p><span class="badge-count">{{ inventoryLabel }}</span></p>
-                            </div>
-                        </div>
-
-                        <div class="header-actions">
-                            <div class="header-amount-input">
-                                <label>CANTIDAD</label>
-                                <input type="number" v-model="transferAmount" min="0" placeholder="0" />
+                <div class="tab-content-animator">
+                    <div class="tab-content-wrapper" v-show="activeTab === 'inventory'">
+                        <div class="page-header modern-header" style="border-bottom: none;">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:backpack"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>INVENTARIO</h2>
+                                    <p><span class="badge-count">{{ inventoryLabel }}</span></p>
+                                </div>
                             </div>
 
-                            <div class="weight-icon-btn"
-                                v-tooltip.bottom="'Peso: ' + (playerWeight / 1000).toFixed(1) + ' / ' + (maxWeight / 1000).toFixed(1) + ' KG'">
-                                <iconify-icon icon="mdi:weight"></iconify-icon>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="weight-bar">
-                        <div class="weight-bar-fill"
-                            :style="{ width: Math.min((playerWeight / maxWeight) * 100, 100) + '%' }"
-                            :class="weightBarClass"></div>
-                    </div>
-
-                    <div class="inventory-grid">
-                        <div class="item-grid">
-                            <div v-for="slot in totalSlots" :key="slot" class="item-slot" :data-slot="slot"
-                                :class="{ 'invalid-slot-highlight': errorSlot === slot }"
-                                @dblclick="getItemInSlot(slot, 'player') && useItem(getItemInSlot(slot, 'player'))"
-                                @mousedown="event => handleMouseDown(event, slot, 'player')">
-
-                                <div class="item-slot-key" v-if="slot <= 5 && !getItemInSlot(slot, 'player')">
-                                    <p>{{ slot }}</p>
+                            <div class="header-actions">
+                                <div class="header-amount-input">
+                                    <label>CANTIDAD</label>
+                                    <input type="number" v-model="transferAmount" min="0" placeholder="0" />
                                 </div>
 
-                                <template v-if="getItemInSlot(slot, 'player')">
-                                    <div class="item-slot-img"
-                                        v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'player')), html: true}">
-                                        <img :src="'images/' + getItemInSlot(slot, 'player').image" alt="" />
+                                <div class="weight-icon-btn"
+                                    v-tooltip.bottom="'Peso: ' + (playerWeight / 1000).toFixed(1) + ' / ' + (maxWeight / 1000).toFixed(1) + ' KG'">
+                                    <iconify-icon icon="mdi:weight"></iconify-icon>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="weight-bar">
+                            <div class="weight-bar-fill"
+                                :style="{ width: Math.min((playerWeight / maxWeight) * 100, 100) + '%' }"
+                                :class="weightBarClass"></div>
+                        </div>
+
+                        <div class="inventory-grid">
+                            <div class="item-grid">
+                                <div v-for="slot in totalSlots" :key="slot" class="item-slot" :data-slot="slot"
+                                    :class="{ 'invalid-slot-highlight': errorSlot === slot }"
+                                    @dblclick="getItemInSlot(slot, 'player') && useItem(getItemInSlot(slot, 'player'))"
+                                    @mousedown="event => handleMouseDown(event, slot, 'player')">
+
+                                    <div class="item-slot-key" v-if="slot <= 5 && !getItemInSlot(slot, 'player')">
+                                        <p>{{ slot }}</p>
                                     </div>
-                                    <div class="item-slot-amount">
-                                        <p>x{{ getItemInSlot(slot, 'player').amount }}</p>
+
+                                    <template v-if="getItemInSlot(slot, 'player')">
+                                        <div class="item-slot-img"
+                                            v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'player')), html: true}">
+                                            <img :src="'images/' + getItemInSlot(slot, 'player').image" alt="" />
+                                        </div>
+                                        <div class="item-slot-amount">
+                                            <p>x{{ getItemInSlot(slot, 'player').amount }}</p>
+                                        </div>
+                                        <div class="item-slot-durability"
+                                            v-if="getItemInSlot(slot, 'player').info && 'quality' in getItemInSlot(slot, 'player').info">
+                                            <div class="item-slot-durability-fill"
+                                                :style="{ width: getDurabilityPercentage(getItemInSlot(slot, 'player')) + '%' }"
+                                                :class="getDurabilityClass(getItemInSlot(slot, 'player'))">
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'character'">
+                        <div class="page-header modern-header">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:account"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>PERSONAJE</h2>
+                                    <p>Acciones e interacciones rápidas</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="character-actions" v-if="!rockstarPanelOpen">
+                            <button class="char-btn text-btn" @click="doAction('amenazar')">
+                                <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                        class="arrow-2">&gt;</span></span>
+                                <span class="btn-text">AMENAZAR A ALGUIEN (/th o secuestro)</span>
+                            </button>
+                            <button class="char-btn text-btn" @click="doAction('cachear')">
+                                <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                        class="arrow-2">&gt;</span></span>
+                                <span class="btn-text">CACHEAR JUGADOR</span>
+                            </button>
+                            <button class="char-btn text-btn" @click="doAction('cargar')">
+                                <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                        class="arrow-2">&gt;</span></span>
+                                <span class="btn-text">CARGAR</span>
+                            </button>
+                            <button class="char-btn text-btn" @click="doAction('caballito')">
+                                <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                        class="arrow-2">&gt;</span></span>
+                                <span class="btn-text">CABALLITO</span>
+                            </button>
+                            <button class="char-btn text-btn" @click="doAction('documentos')">
+                                <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                        class="arrow-2">&gt;</span></span>
+                                <span class="btn-text">DOCUMENTOS</span>
+                            </button>
+                            <button class="char-btn rockstar-btn" @click="doAction('rockstar')">
+                                <img src="images/rockstareditor.png" alt="Rockstar Editor" />
+                            </button>
+                        </div>
+
+                        <!-- PANEL ROCKSTAR EDITOR -->
+                        <div class="clothing-action-pane custom-scrollbar" v-if="rockstarPanelOpen"
+                            style="max-height: 52vh; min-height: 11.2vh; overflow-y: auto; overflow-x: hidden; padding-right: 8px;">
+                            <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
+
+                                <button class="char-btn text-btn"
+                                    style="margin-bottom: 8px; background-color: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1);"
+                                    @click="closeRockstarPanel()">
+                                    <span class="arrows" style="color: var(--primary);"><span
+                                            class="arrow-1">&lt;</span><span class="arrow-2">&lt;</span></span>
+                                    <span class="btn-text" style="color: #ffffff;">VOLVER AL MENÚ</span>
+                                </button>
+                                <div
+                                    style="margin: 6px 0 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); padding-bottom: 4px;">
+                                    <h3
+                                        style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.4); letter-spacing: 1.5px; margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                                        <iconify-icon icon="mdi:record-circle-outline"
+                                            style="font-size: 1.2rem; color: #e63946;"></iconify-icon>
+                                        ROCKSTAR EDITOR
+                                    </h3>
+                                </div>
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_start')">
+                                    <span class="arrows" style="color: #e63946;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">INICIAR GRABACIÓN</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_start_25')">
+                                    <span class="arrows" style="color: #e63946;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">GRABAR — 25 SEGUNDOS</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_start_60')">
+                                    <span class="arrows" style="color: #e63946;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">GRABAR — 1 MINUTO</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_start_300')">
+                                    <span class="arrows" style="color: #e63946;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">GRABAR — 5 MINUTOS</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_save')">
+                                    <span class="arrows" style="color: #2dc653;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">GUARDAR GRABACIÓN</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_discard')">
+                                    <span class="arrows" style="color: rgba(255,255,255,0.4);"><span
+                                            class="arrow-1">&gt;</span><span class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">DESCARTAR GRABACIÓN</span>
+                                </button>
+
+                                <button class="char-btn text-btn" @click="doRockstarAction('rockstar_editor')"
+                                    style="margin-top: 6px; border-color: rgba(229, 57, 53, 0.3); background: rgba(229, 57, 53, 0.08);">
+                                    <span class="arrows" style="color: #e63946;"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text" style="color: #ff6b6b;">IR AL ROCKSTAR EDITOR</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'clothing'">
+                        <div class="page-header modern-header">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:tshirt-crew"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>ROPA</h2>
+                                    <p>Gestión de vestimenta y accesorios</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar">
+                            <div class="interaction-cards-grid">
+                                <div class="interaction-card" @click="doAction('ropa_sombrero')">
+                                    <iconify-icon icon="mingcute:hat-fill" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Sombrero</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_gafas')">
+                                    <iconify-icon icon="hugeicons:glasses" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Gafas</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_mascara')">
+                                    <iconify-icon icon="game-icons:ninja-mask"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Máscara</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_cabello')">
+                                    <iconify-icon icon="mingcute:hair-fill" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Cabello</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_cambiar_cabello')">
+                                    <iconify-icon icon="boxicons:head-filled"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Cambiar Pelo</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_cadena')">
+                                    <iconify-icon icon="icon-park-outline:diamond-necklace"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Cadena</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_chaqueta')">
+                                    <iconify-icon icon="game-icons:pirate-coat"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Chaqueta</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_chaleco')">
+                                    <iconify-icon icon="game-icons:kevlar-vest"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Chaleco</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_camiseta')">
+                                    <iconify-icon icon="solar:t-shirt-bold" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Camiseta</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_mochila')">
+                                    <iconify-icon icon="game-icons:backpack"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Mochila</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_reloj')">
+                                    <iconify-icon icon="glyphs:watch-bold" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Reloj</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_pulsera')">
+                                    <iconify-icon icon="game-icons:bracer" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Pulsera</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_guantes')">
+                                    <iconify-icon icon="game-icons:gloves" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Guantes</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_pantalones')">
+                                    <iconify-icon icon="ph:pants-fill" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Pantalones</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('ropa_zapatos')">
+                                    <iconify-icon icon="roentgen:shoe" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Zapatos</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'weapons'">
+                        <div class="page-header modern-header">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:pistol"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>ARMAS</h2>
+                                    <p>Configuración táctica y posicionamiento</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar">
+                            <div class="interaction-cards-grid">
+                                <div class="interaction-card" @click="doAction('aim_default')">
+                                    <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Normal</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('aim_gangster')">
+                                    <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Gangster</h3>
+                                </div>
+                                <div class="interaction-card" @click="doAction('aim_cowboy')">
+                                    <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Cowboy</h3>
+                                </div>
+                            </div>
+
+                            <div
+                                style="margin: 15px 0 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 2px;">
+                                <h3
+                                    style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.5); letter-spacing: 1.5px; margin: 0; font-weight: 600;">
+                                    POSICIONAMIENTO</h3>
+                            </div>
+
+                            <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
+                                <button class="char-btn text-btn" @click="doAction('weap_toggle')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">MOSTRAR / OCULTAR ARMAS</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_front')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">DELANTE</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_back')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">ATRAS</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_belt')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">CINTURA</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_normal')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">NORMAL</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_chest')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">PECHO</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_thigh')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">MUSLO</span>
+                                </button>
+                                <button class="char-btn text-btn" @click="doAction('weap_leg')">
+                                    <span class="arrows"><span class="arrow-1">&gt;</span><span
+                                            class="arrow-2">&gt;</span></span>
+                                    <span class="btn-text">PIERNA</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'vehicle' && inVehicle">
+                        <div class="page-header modern-header">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:car"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>VEHÍCULO</h2>
+                                    <p>Controles remotos y puertas</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar">
+                            <div class="interaction-cards-grid-4">
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_engine')"
+                                    @click="doAction('veh_engine')">
+                                    <iconify-icon icon="ri:shut-down-line" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Motor</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_radio')"
+                                    @click="doAction('veh_radio')">
+                                    <iconify-icon icon="mdi:radio" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Radio</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_keys')"
+                                    @click="doAction('veh_keys')">
+                                    <iconify-icon icon="game-icons:car-key" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Llaves</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_drift')"
+                                    @click="doAction('veh_drift')">
+                                    <iconify-icon icon="solar:wheel-angle-bold"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Drift</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_limitador')"
+                                    @click="doAction('veh_limitador')">
+                                    <iconify-icon icon="material-symbols:speed"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Limitador</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_crucero')"
+                                    @click="doAction('veh_crucero')">
+                                    <iconify-icon icon="mdi:speedometer-medium"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Crucero</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_hood')"
+                                    @click="doAction('veh_hood')">
+                                    <iconify-icon icon="mdi:car-windshield" class="clothing-action-icon"
+                                        rotate="180deg"></iconify-icon>
+                                    <h3>Capó</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_trunk')"
+                                    @click="doAction('veh_trunk')">
+                                    <iconify-icon icon="mdi:car-windshield" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Maletero</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_sit_di')"
+                                    @click="doAction('veh_sit_di')">
+                                    <iconify-icon icon="mdi:car-seat" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Asiento D.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_sit_dd')"
+                                    @click="doAction('veh_sit_dd')">
+                                    <iconify-icon icon="mdi:car-seat" class="clothing-action-icon"
+                                        style="transform: scaleX(-1);"></iconify-icon>
+                                    <h3>Asiento D.D</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_sit_ti')"
+                                    @click="doAction('veh_sit_ti')">
+                                    <iconify-icon icon="mdi:car-seat" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Asiento T.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_sit_td')"
+                                    @click="doAction('veh_sit_td')">
+                                    <iconify-icon icon="mdi:car-seat" class="clothing-action-icon"
+                                        style="transform: scaleX(-1);"></iconify-icon>
+                                    <h3>Asiento T.D</h3>
+                                </div>
+                                <div class="interaction-card" v-for="seatIndex in extraSeats" :key="'seat-'+seatIndex"
+                                    v-if="canAccessVehicleAction('veh_sit_' + seatIndex)"
+                                    @click="doAction('veh_sit_' + seatIndex)">
+                                    <iconify-icon icon="mdi:car-seat" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Asiento {{ seatIndex + 2 }}</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_door_fl')"
+                                    @click="doAction('veh_door_fl')">
+                                    <iconify-icon icon="mdi:car-door" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Puerta D.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_door_fr')"
+                                    @click="doAction('veh_door_fr')">
+                                    <iconify-icon icon="mdi:car-door" class="clothing-action-icon"
+                                        style="transform: scaleX(-1);"></iconify-icon>
+                                    <h3>Puerta D.D</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_win_fl')"
+                                    @click="doAction('veh_win_fl')">
+                                    <iconify-icon icon="material-symbols:window-open"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Ventana D.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_win_fr')"
+                                    @click="doAction('veh_win_fr')">
+                                    <iconify-icon icon="material-symbols:window-open"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Ventana D.D</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_door_rl')"
+                                    @click="doAction('veh_door_rl')">
+                                    <iconify-icon icon="mdi:car-door" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Puerta T.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_door_rr')"
+                                    @click="doAction('veh_door_rr')">
+                                    <iconify-icon icon="mdi:car-door" class="clothing-action-icon"
+                                        style="transform: scaleX(-1);"></iconify-icon>
+                                    <h3>Puerta T.D</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_win_rl')"
+                                    @click="doAction('veh_win_rl')">
+                                    <iconify-icon icon="material-symbols:window-open"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Ventana T.I</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_win_rr')"
+                                    @click="doAction('veh_win_rr')">
+                                    <iconify-icon icon="material-symbols:window-open"
+                                        class="clothing-action-icon"></iconify-icon>
+                                    <h3>Ventana T.D</h3>
+                                </div>
+                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_anchor')"
+                                    @click="doAction('veh_anchor')">
+                                    <iconify-icon icon="game-icons:anchor" class="clothing-action-icon"></iconify-icon>
+                                    <h3>Ancla</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'settings'">
+                        <div class="page-header modern-header">
+                            <div class="section-title">
+                                <div class="title-icon-wrap">
+                                    <iconify-icon icon="mdi:cog"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2>AJUSTES</h2>
+                                    <p>Personalización de la interfaz</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar">
+                            <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-title">SONIDOS DE INTERFAZ</span>
                                     </div>
-                                    <div class="item-slot-durability"
-                                        v-if="getItemInSlot(slot, 'player').info && 'quality' in getItemInSlot(slot, 'player').info">
-                                        <div class="item-slot-durability-fill"
-                                            :style="{ width: getDurabilityPercentage(getItemInSlot(slot, 'player')) + '%' }"
-                                            :class="getDurabilityClass(getItemInSlot(slot, 'player'))">
+                                    <div class="setting-control">
+                                        <label class="switch">
+                                            <input type="checkbox" checked>
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-title">MOVERSE CON INVENTARIO ABIERTO</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="switch">
+                                            <input type="checkbox" v-model="moveWhileOpen" @change="saveMovePreference">
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-title">POSICIÓN SECUNDARIO</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <div class="custom-select-wrapper" :class="{ 'active': isSettingsSelectOpen }">
+                                            <div class="custom-select-trigger"
+                                                @click.stop="toggleSettingsSelect($event)">
+                                                <span>{{ getPositionLabel(inventoryPosition) }}</span>
+                                                <iconify-icon icon="mdi:chevron-down"
+                                                    class="select-icon"></iconify-icon>
+                                            </div>
+
+                                            <teleport to="body">
+                                                <div class="custom-select-options" v-if="isSettingsSelectOpen"
+                                                    :style="selectDropdownStyle">
+                                                    <div class="custom-select-option"
+                                                        :class="{ 'selected': inventoryPosition === 'bottom' }"
+                                                        @click.stop="setInventoryPosition('bottom')">Abajo</div>
+                                                    <div class="custom-select-option"
+                                                        :class="{ 'selected': inventoryPosition === 'top' }"
+                                                        @click.stop="setInventoryPosition('top')">Arriba</div>
+                                                    <div class="custom-select-option"
+                                                        :class="{ 'selected': inventoryPosition === 'left' }"
+                                                        @click.stop="setInventoryPosition('left')">Izquierda</div>
+                                                    <div class="custom-select-option"
+                                                        :class="{ 'selected': inventoryPosition === 'right' }"
+                                                        @click.stop="setInventoryPosition('right')">Derecha</div>
+                                                </div>
+                                            </teleport>
                                         </div>
                                     </div>
-                                </template>
+                                </div>
+
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-title">OPCIÓN FUTURA</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <span
+                                            style="color: var(--text-muted); font-size: 1vh; font-weight: 600;">PRÓXIMAMENTE</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-guide-section">
+                                <div class="settings-guide-title">
+                                    <iconify-icon icon="mdi:book-open-page-variant"></iconify-icon>
+                                    <span>Guía de Uso y Controles</span>
+                                </div>
+
+                                <div class="guide-list-container custom-scrollbar">
+                                    <div class="guide-list-item" v-for="info in inventoryGuideList" :key="info.id">
+                                        <div class="guide-badge">{{ info.key }}</div>
+                                        <div class="guide-title">{{ info.title }}</div>
+
+                                        <button class="guide-info-btn"
+                                            v-tooltip.left="{ content: generateGuideTooltip(info), html: true }">
+                                            <iconify-icon icon="mdi:information"></iconify-icon>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+
+                    <div class="tab-content-wrapper" v-if="activeTab === 'admin'">
+                        <div class="page-header modern-header">
+                            <div class="section-title admin-panel-title">
+                                <div class="title-icon-wrap"
+                                    style="color: var(--primary); border-color: rgba(255, 255, 255, 0.2);">
+                                    <iconify-icon icon="mdi:shield-crown"></iconify-icon>
+                                </div>
+                                <div class="title-text">
+                                    <h2 style="color: #ffffff;">PANEL ADMIN</h2>
+                                    <p>Gestión global de inventarios</p>
+                                </div>
+                            </div>
+                            <div class="header-actions">
+                                <div v-if="adminCurrentCategory" class="weight-icon-btn expandable-search"
+                                    :class="{ 'active': showAdminSearch }"
+                                    style="color: var(--primary); border-color: rgba(255, 255, 255, 0.2);"
+                                    @click="!showAdminSearch ? toggleAdminSearch() : null"
+                                    v-tooltip.bottom="!showAdminSearch ? 'Buscar' : ''">
+
+                                    <div class="search-icon-fixed">
+                                        <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
+                                    </div>
+
+                                    <input type="text" id="admin-search-input" class="admin-search-input-integrated"
+                                        :value="adminSearchQuery" @input="updateSearch"
+                                        placeholder="Buscar por ID / Nombre..." autocomplete="off" />
+
+                                    <div class="close-search-btn" @click.stop="toggleAdminSearch()">
+                                        <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar" v-if="!adminCurrentCategory">
+                            <div class="interaction-cards-grid-2">
+                                <div class="interaction-card"
+                                    style="border-color: rgba(255, 255, 255, 0.1); height: 10vh;"
+                                    @click="openAdminCategory('players')">
+                                    <iconify-icon icon="mdi:account-group" class="clothing-action-icon"
+                                        style="font-size: 4.5vh !important;"></iconify-icon>
+                                    <h3 style="margin-top: 10px;">Jugadores ({{ adminData ? adminData.players.length : 0
+                                        }})
+                                    </h3>
+                                </div>
+                                <div class="interaction-card"
+                                    style="border-color: rgba(255, 255, 255, 0.1); height: 10vh;"
+                                    @click="openAdminCategory('stashes')">
+                                    <iconify-icon icon="mdi:package-variant" class="clothing-action-icon"
+                                        style="font-size: 4.5vh !important;"></iconify-icon>
+                                    <h3 style="margin-top: 10px;">Almacenes ({{ adminData ? adminData.stashes.length : 0
+                                        }})
+                                    </h3>
+                                </div>
+                                <div class="interaction-card"
+                                    style="border-color: rgba(255, 255, 255, 0.1); height: 10vh;"
+                                    @click="openAdminCategory('trunks')">
+                                    <iconify-icon icon="mdi:car" class="clothing-action-icon"
+                                        style="font-size: 4.5vh !important;"></iconify-icon>
+                                    <h3 style="margin-top: 10px;">Maleteros ({{ adminData ? adminData.trunks.length : 0
+                                        }})
+                                    </h3>
+                                </div>
+                                <div class="interaction-card"
+                                    style="border-color: rgba(255, 255, 255, 0.1); height: 10vh;"
+                                    @click="openAdminCategory('gloveboxes')">
+                                    <iconify-icon icon="mdi:toolbox" class="clothing-action-icon"
+                                        style="font-size: 4.5vh !important;"></iconify-icon>
+                                    <h3 style="margin-top: 10px;">Guanteras ({{ adminData ? adminData.gloveboxes.length
+                                        : 0
+                                        }})</h3>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="clothing-action-pane custom-scrollbar" v-else
+                            style="max-height: 52vh; min-height: 11.2vh; overflow-y: auto; overflow-x: hidden; padding-right: 8px;">
+                            <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
+                                <button class="char-btn text-btn"
+                                    style="margin-bottom: 8px; background-color: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1);"
+                                    @click="returnToAdminMain()">
+                                    <span class="arrows" style="color: var(--primary);"><span
+                                            class="arrow-1">&lt;</span><span class="arrow-2">&lt;</span></span>
+                                    <span class="btn-text" style="color: #ffffff;">VOLVER AL PANEL PRINCIPAL</span>
+                                </button>
+
+                                <div v-if="adminList.length === 0"
+                                    style="text-align: center; margin-top: 20px; color: var(--text-muted); font-size: 1.2vh; font-style: italic;">
+                                    No hay registros en esta categoría.
+                                </div>
+
+                                <button v-for="item in adminList" :key="item.id || item" class="char-btn text-btn"
+                                    @click="forceOpenAdmin(item)">
+                                    <span class="arrows"><iconify-icon :icon="getAdminCategoryIcon()"
+                                            style="font-size: 1.5vh; margin-right: 8px;"></iconify-icon></span>
+                                    <span class="btn-text" style="color: #ffffff;">{{ item.name ? '[' + item.id + '] ' +
+                                        item.name + ' (' + item.steam +
+                                        ')' : item }}</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="tab-content-wrapper" v-if="activeTab === 'character'">
-                    <div class="page-header modern-header">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:account"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>PERSONAJE</h2>
-                                <p>Acciones e interacciones rápidas</p>
-                            </div>
-                        </div>
+                <div class="menu-footer" style="position: relative;">
+                    <div class="footer-action">
+                        <span class="key-badge">J</span>
+                        <span>MODO CURSOR</span>
                     </div>
 
-                    <div class="character-actions">
-                        <button class="char-btn text-btn" @click="doAction('amenazar')">
-                            <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                    class="arrow-2">&gt;</span></span>
-                            <span class="btn-text">AMENAZAR A ALGUIEN (/th o secuestro)</span>
-                        </button>
-                        <button class="char-btn text-btn" @click="doAction('cachear')">
-                            <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                    class="arrow-2">&gt;</span></span>
-                            <span class="btn-text">CACHEAR JUGADOR</span>
-                        </button>
-                        <button class="char-btn text-btn" @click="doAction('cargar')">
-                            <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                    class="arrow-2">&gt;</span></span>
-                            <span class="btn-text">CARGAR</span>
-                        </button>
-                        <button class="char-btn text-btn" @click="doAction('caballito')">
-                            <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                    class="arrow-2">&gt;</span></span>
-                            <span class="btn-text">CABALLITO</span>
-                        </button>
-                        <button class="char-btn text-btn" @click="doAction('documentos')">
-                            <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                    class="arrow-2">&gt;</span></span>
-                            <span class="btn-text">DOCUMENTOS</span>
-                        </button>
-                        <button class="char-btn rockstar-btn" @click="doAction('rockstar')">
-                            <img src="images/rockstareditor.png" alt="Rockstar Editor" />
-                        </button>
-                    </div>
-                </div>
-
-                <div class="tab-content-wrapper" v-if="activeTab === 'clothing'">
-                    <div class="page-header modern-header">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:tshirt-crew"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>ROPA</h2>
-                                <p>Gestión de vestimenta y accesorios</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="clothing-action-pane custom-scrollbar">
-                        <div class="interaction-cards-grid">
-                            <div class="interaction-card" @click="doAction('ropa_sombrero')">
-                                <iconify-icon icon="mingcute:hat-fill" class="clothing-action-icon"></iconify-icon>
-                                <h3>Sombrero</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_gafas')">
-                                <iconify-icon icon="hugeicons:glasses" class="clothing-action-icon"></iconify-icon>
-                                <h3>Gafas</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_mascara')">
-                                <iconify-icon icon="game-icons:ninja-mask" class="clothing-action-icon"></iconify-icon>
-                                <h3>Máscara</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_cabello')">
-                                <iconify-icon icon="mingcute:hair-fill" class="clothing-action-icon"></iconify-icon>
-                                <h3>Cabello</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_cambiar_cabello')">
-                                <iconify-icon icon="boxicons:head-filled" class="clothing-action-icon"></iconify-icon>
-                                <h3>Cambiar Pelo</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_cadena')">
-                                <iconify-icon icon="icon-park-outline:diamond-necklace"
-                                    class="clothing-action-icon"></iconify-icon>
-                                <h3>Cadena</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_chaqueta')">
-                                <iconify-icon icon="game-icons:pirate-coat" class="clothing-action-icon"></iconify-icon>
-                                <h3>Chaqueta</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_chaleco')">
-                                <iconify-icon icon="game-icons:kevlar-vest" class="clothing-action-icon"></iconify-icon>
-                                <h3>Chaleco</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_camiseta')">
-                                <iconify-icon icon="solar:t-shirt-bold" class="clothing-action-icon"></iconify-icon>
-                                <h3>Camiseta</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_mochila')">
-                                <iconify-icon icon="game-icons:backpack" class="clothing-action-icon"></iconify-icon>
-                                <h3>Mochila</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_reloj')">
-                                <iconify-icon icon="glyphs:watch-bold" class="clothing-action-icon"></iconify-icon>
-                                <h3>Reloj</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_pulsera')">
-                                <iconify-icon icon="game-icons:bracer" class="clothing-action-icon"></iconify-icon>
-                                <h3>Pulsera</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_guantes')">
-                                <iconify-icon icon="game-icons:gloves" class="clothing-action-icon"></iconify-icon>
-                                <h3>Guantes</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_pantalones')">
-                                <iconify-icon icon="ph:pants-fill" class="clothing-action-icon"></iconify-icon>
-                                <h3>Pantalones</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('ropa_zapatos')">
-                                <iconify-icon icon="roentgen:shoe" class="clothing-action-icon"></iconify-icon>
-                                <h3>Zapatos</h3>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tab-content-wrapper" v-if="activeTab === 'weapons'">
-                    <div class="page-header modern-header">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:pistol"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>ARMAS</h2>
-                                <p>Configuración táctica y posicionamiento</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="clothing-action-pane custom-scrollbar">
-                        <div class="interaction-cards-grid">
-                            <div class="interaction-card" @click="doAction('aim_default')">
-                                <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
-                                <h3>Normal</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('aim_gangster')">
-                                <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
-                                <h3>Gangster</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('aim_cowboy')">
-                                <iconify-icon icon="mdi:target" class="clothing-action-icon"></iconify-icon>
-                                <h3>Cowboy</h3>
-                            </div>
-                        </div>
-
-                        <div
-                            style="margin: 15px 0 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 2px;">
-                            <h3
-                                style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.5); letter-spacing: 1.5px; margin: 0; font-weight: 600;">
-                                POSICIONAMIENTO</h3>
-                        </div>
-
-                        <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
-                            <button class="char-btn text-btn" @click="doAction('weap_toggle')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">MOSTRAR / OCULTAR ARMAS</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_front')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">DELANTE</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_back')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">ATRAS</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_belt')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">CINTURA</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_normal')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">NORMAL</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_chest')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">PECHO</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_thigh')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">MUSLO</span>
-                            </button>
-                            <button class="char-btn text-btn" @click="doAction('weap_leg')">
-                                <span class="arrows"><span class="arrow-1">&gt;</span><span
-                                        class="arrow-2">&gt;</span></span>
-                                <span class="btn-text">PIERNA</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tab-content-wrapper" v-if="activeTab === 'vehicle' && isDriver">
-                    <div class="page-header modern-header">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:car"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>VEHÍCULO</h2>
-                                <p>Controles remotos y puertas</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="clothing-action-pane custom-scrollbar">
-                        <div class="interaction-cards-grid-4">
-                            <div class="interaction-card" @click="doAction('veh_engine')">
-                                <iconify-icon icon="ri:shut-down-line" class="clothing-action-icon"></iconify-icon>
-                                <h3>Motor</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_radio')">
-                                <iconify-icon icon="mdi:radio" class="clothing-action-icon"></iconify-icon>
-                                <h3>Radio</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_keys')">
-                                <iconify-icon icon="game-icons:car-key" class="clothing-action-icon"></iconify-icon>
-                                <h3>Llaves</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_drift')">
-                                <iconify-icon icon="solar:wheel-angle-bold" class="clothing-action-icon"></iconify-icon>
-                                <h3>Drift</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_limitador')">
-                                <iconify-icon icon="material-symbols:speed" class="clothing-action-icon"></iconify-icon>
-                                <h3>Limitador</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_crucero')">
-                                <iconify-icon icon="mdi:speedometer-medium" class="clothing-action-icon"></iconify-icon>
-                                <h3>Crucero</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_hood')">
-                                <iconify-icon icon="mdi:car-windshield" class="clothing-action-icon"
-                                    rotate="180deg"></iconify-icon>
-                                <h3>Capó</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_trunk')">
-                                <iconify-icon icon="mdi:car-windshield" class="clothing-action-icon"></iconify-icon>
-                                <h3>Maletero</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_door_fl')">
-                                <iconify-icon icon="mdi:car-door" class="clothing-action-icon"></iconify-icon>
-                                <h3>Puerta D.I</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_door_fr')">
-                                <iconify-icon icon="mdi:car-door" class="clothing-action-icon"
-                                    style="transform: scaleX(-1);"></iconify-icon>
-                                <h3>Puerta D.D</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_win_fl')">
-                                <iconify-icon icon="material-symbols:window-open"
-                                    class="clothing-action-icon"></iconify-icon>
-                                <h3>Ventana D.I</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_win_fr')">
-                                <iconify-icon icon="material-symbols:window-open"
-                                    class="clothing-action-icon"></iconify-icon>
-                                <h3>Ventana D.D</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_door_rl')">
-                                <iconify-icon icon="mdi:car-door" class="clothing-action-icon"></iconify-icon>
-                                <h3>Puerta T.I</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_door_rr')">
-                                <iconify-icon icon="mdi:car-door" class="clothing-action-icon"
-                                    style="transform: scaleX(-1);"></iconify-icon>
-                                <h3>Puerta T.D</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_win_rl')">
-                                <iconify-icon icon="material-symbols:window-open"
-                                    class="clothing-action-icon"></iconify-icon>
-                                <h3>Ventana T.I</h3>
-                            </div>
-                            <div class="interaction-card" @click="doAction('veh_win_rr')">
-                                <iconify-icon icon="material-symbols:window-open"
-                                    class="clothing-action-icon"></iconify-icon>
-                                <h3>Ventana T.D</h3>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tab-content-wrapper" v-if="activeTab === 'settings'">
-                    <div class="page-header modern-header">
-                        <div class="section-title">
-                            <div class="title-icon-wrap">
-                                <iconify-icon icon="mdi:cog"></iconify-icon>
-                            </div>
-                            <div class="title-text">
-                                <h2>AJUSTES</h2>
-                                <p>Personalización de la interfaz</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="clothing-action-pane custom-scrollbar">
-                        <div class="character-actions" style="height: auto; overflow: visible; padding: 0;">
-
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-title">SONIDOS DE INTERFAZ</span>
-                                </div>
-                                <div class="setting-control">
-                                    <label class="switch">
-                                        <input type="checkbox" checked>
-                                        <span class="slider round"></span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-title">OPCIÓN FUTURA 1</span>
-                                </div>
-                                <div class="setting-control">
-                                    <span
-                                        style="color: var(--text-muted); font-size: 1vh; font-weight: 600;">PRÓXIMAMENTE</span>
-                                </div>
-                            </div>
-
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-title">OPCIÓN FUTURA 2</span>
-                                </div>
-                                <div class="setting-control">
-                                    <span
-                                        style="color: var(--text-muted); font-size: 1vh; font-weight: 600;">PRÓXIMAMENTE</span>
-                                </div>
-                            </div>
-
-                        </div>
+                    <div class="desarrollo">
+                        Desarrollado por <strong>DP-Scripts</strong>
                     </div>
                 </div>
             </div>
@@ -527,10 +827,16 @@
                                 otherInventoryName.startsWith('glovebox') ? 'GUANTERA' :
                                 otherInventoryName.startsWith('stash') ? 'ALMACÉN' :
                                 otherInventoryName.startsWith('drop') ? 'SUELO' :
+                                otherInventoryName.startsWith('otherplayer') ? 'INVENTARIO ' :
                                 otherInventoryLabel
                                 }}
                             </h2>
-                            <p><span class="badge-count">{{ otherInventoryName.toUpperCase() }}</span></p>
+                            <p>
+                                <span class="badge-count">
+                                    {{ otherInventoryName.startsWith('otherplayer') ? otherInventoryLabel.toUpperCase()
+                                    : otherInventoryName.toUpperCase() }}
+                                </span>
+                            </p>
                         </div>
                     </div>
 
@@ -572,6 +878,12 @@
                                 </div>
                             </template>
                         </div>
+                    </div>
+                </div>
+
+                <div class="menu-footer" style="position: relative;">
+                    <div class="desarrollo">
+                        Desarrollado por <strong>DP-Scripts</strong>
                     </div>
                 </div>
             </div>
@@ -707,7 +1019,8 @@
                         <template v-if="getAttachmentByType(slotDef.type)">
                             <div class="item-slot-img"
                                 v-tooltip.left="{ content: getAttachmentByType(slotDef.type).label, html: false }">
-                                <img :src="'images/Armas/' + getAttachmentByType(slotDef.type).attachment + '.png'" alt="" />
+                                <img :src="'images/Armas/' + getAttachmentByType(slotDef.type).attachment + '.png'"
+                                    alt="" />
                             </div>
                         </template>
 

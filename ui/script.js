@@ -1,8 +1,3 @@
-/* ==========================================================================
-   DP-INVENTORY: VUE.JS MAIN SCRIPT
-   Organizado por módulos y funciones para fácil lectura
-   ========================================================================== */
-
 const InventoryContainer = Vue.createApp({
     // ==========================================
     // 1. DATOS REACTIVOS (STATE)
@@ -45,6 +40,16 @@ const InventoryContainer = Vue.createApp({
             if (weightPercentage < 75) return "medium";
             return "high";
         },
+        extraSeats() {
+            // Genera botones extra para vehículos con más de 4 plazas (Limusinas, Buses...)
+            if (!this.vehicleData || this.vehicleData.seats <= 4) return [];
+            let extras = [];
+            // Los índices empiezan en 3 (porque -1, 0, 1, y 2 son los estándar)
+            for (let i = 3; i <= this.vehicleData.seats - 2; i++) {
+                extras.push(i);
+            }
+            return extras;
+        },
         shouldCenterInventory() {
             return this.isOtherInventoryEmpty;
         },
@@ -53,7 +58,30 @@ const InventoryContainer = Vue.createApp({
             return Object.values(this.playerInventory).some(item =>
                 item && item.type === 'weapon' && item.name && item.name.toLowerCase().startsWith('weapon_')
             );
-        }
+        },
+        adminList() {
+            if (!this.adminData || !this.adminCurrentCategory) return [];
+
+            let list = this.adminData[this.adminCurrentCategory] || [];
+
+            // Si el usuario ha escrito algo en el buscador
+            if (this.adminSearchQuery.trim() !== '') {
+                const query = this.adminSearchQuery.toLowerCase().trim();
+
+                list = list.filter(item => {
+                    if (this.adminCurrentCategory === 'players') {
+                        // Busca por nombre, steam o ID
+                        return item.name.toLowerCase().includes(query) ||
+                            item.steam.toLowerCase().includes(query) ||
+                            item.id.toString().includes(query);
+                    } else {
+                        // Busca por ID en almacenes, maleteros y guanteras
+                        return item.toLowerCase().includes(query);
+                    }
+                });
+            }
+            return list;
+        },
     },
 
     // ==========================================
@@ -140,7 +168,7 @@ const InventoryContainer = Vue.createApp({
                     { type: 'flashlight', label: 'Accesorio', icon: 'mdi:flashlight', types: ['flashlight_attachment'] },
                     { type: 'scope', label: 'Mira', icon: 'f7:scope', types: ['smallscope_attachment', 'medscope_attachment', 'largescope_attachment', 'holoscope_attachment', 'advscope_attachment', 'nvscope_attachment', 'thermalscope_attachment'] },
                     { type: 'clip', label: 'Cargador', icon: 'mdi:bullet', types: ['clip_attachment'] },
-                    { type: 'drum', label: 'Cargador Drum', icon: 'mdi:cached', types: ['drum_attachment'] },
+                    { type: 'drum', label: 'Cargador de Tambor', icon: 'mdi:cached', types: ['drum_attachment'] },
                     { type: 'camo', label: 'Camuflaje', icon: 'mdi:palette-outline', types: ['digicamo_attachment', 'brushcamo_attachment', 'woodcamo_attachment', 'skullcamo_attachment', 'sessantacamo_attachment', 'perseuscamo_attachment', 'leopardcamo_attachment', 'zebracamo_attachment', 'geocamo_attachment', 'boomcamo_attachment', 'patriotcamo_attachment', 'luxuryfinish_attachment'] },
                 ],
                 // Dragging and dropping
@@ -155,20 +183,64 @@ const InventoryContainer = Vue.createApp({
                 activeTab: localStorage.getItem('dp_inv_activeTab') || 'inventory',
                 isDriver: false,
                 isInventoryReady: false,
+                // Rockstar Editor Panel
+                rockstarPanelOpen: false,
+                // Administración
+                isAdmin: false,
+                adminData: null,
+                adminCurrentCategory: null,
+                adminSearchQuery: '',
+                showAdminSearch: false,
+                // Modo Cursor
+                cursorModeActive: false,
+                moveWhileOpen: false,
+                // Control de Vehículos
+                inVehicle: false,
+                vehicleSeat: null,
+                vehicleData: null,
+                // Posicionamiento
+                inventoryPosition: 'bottom',
+                isSettingsSelectOpen: false,
+                selectDropdownStyle: {},
+                // NUEVA LISTA DE GUÍA Y CONTROLES
+                inventoryGuideList: [
+                    { id: 1, key: 'F2', title: 'Abrir / Cerrar Menú', desc: 'Abre y cierra la interfaz del inventario. (Esta tecla puede ser modificada a tu gusto en los ajustes de teclado de FiveM).' },
+                    { id: 2, key: 'J', title: 'Modo Cursor Libre', desc: 'Desvincula la cámara del personaje y te permite utilizar el ratón de forma libre para mover ventanas y explorar la UI cómodamente.' },
+                    { id: 3, key: 'Z', title: 'Ver Cinturón (Hotbar)', desc: 'Muestra visualmente en pantalla los ítems que tienes asignados a los bolsillos rápidos (1 al 5) sin necesidad de abrir el inventario.' },
+                    { id: 4, key: '1 - 5', title: 'Bolsillos Rápidos', desc: 'Pulsa los números del teclado para equipar armas o usar ítems que hayas asignado previamente en la barra inferior de tu inventario.' },
+                    { id: 5, key: 'HOVER', title: 'Información y Detalles', desc: 'Deja el cursor del ratón sobre cualquier ítem para ver su tarjeta de información técnica, peso, estado de degradación, durabilidad y descripción.' },
+                    { id: 6, key: 'ARRASTRAR', title: 'Mover y Organizar', desc: 'Mantén el Click Izquierdo sobre un ítem y muévelo a otro slot, a un maletero, o a una guantera para reorganizar tu equipo.' },
+                    { id: 7, key: 'DRAG OUT', title: 'Tirar al Suelo', desc: 'Mantén pulsado un ítem y suéltalo fuera de los límites de las ventanas del inventario para tirarlo físicamente al suelo.' },
+                    { id: 8, key: 'CLICK DER.', title: 'Menú Contextual', desc: 'Haz click derecho sobre un ítem para desplegar opciones avanzadas: Usar, Dar a jugador cercano, Tirar, Inspeccionar arma, etc.' },
+                    { id: 9, key: 'CLICK DER. (RÁPIDO)', title: 'Transferencia Rápida', desc: 'Teniendo un maletero, alijo o el suelo abierto, haz click derecho sobre un ítem para pasarlo instantáneamente de un inventario a otro.' },
+                    { id: 10, key: 'SHIFT + CLICK IZQ.', title: 'Dividir Cantidades', desc: 'Al mantener presionada la tecla Shift mientras haces click sobre un ítem apilado, separarás la mitad exacta de la cantidad actual.' },
+                    { id: 11, key: 'DOBLE CLICK', title: 'Uso Instantáneo', desc: 'Haz doble click izquierdo rápido sobre cualquier ítem consumible (agua, comida) o arma para usarlo o equiparlo al instante sin menús.' }
+                ],
             };
         },
 
         openInventory(data) {
             if (this.showHotbar) this.toggleHotbar(false);
 
+            this.inventoryPosition = data.invPosition || 'bottom';
+
             this.isInventoryOpen = true;
             this.maxWeight = data.maxweight;
             this.totalSlots = data.slots;
+
             this.isDriver = data.isDriver || false;
+            this.inVehicle = data.inVehicle || false;
+            this.vehicleSeat = data.vehicleSeat !== undefined ? data.vehicleSeat : null;
+            this.vehicleData = data.vehData || null;
+
             this.inventoryLabel = data.playerName ? data.playerName.toUpperCase() : "INVENTARIO";
 
             this.playerInventory = {};
             this.otherInventory = {};
+
+            this.isAdmin = data.isAdmin || false;
+
+            this.moveWhileOpen = data.moveWhileOpen || false;
 
             // 1. Cargar inventario del jugador
             if (data.inventory) {
@@ -217,16 +289,23 @@ const InventoryContainer = Vue.createApp({
             // Leemos la tab guardada con la clave correcta
             const savedTab = localStorage.getItem('dp_inv_activeTab') || 'inventory';
 
-            // Intentamos restaurar la tab guardada, con validaciones de seguridad
-            if (savedTab === 'weapons') {
-                // Solo restauramos 'weapons' si el jugador tiene armas en el inventario
+            // Si estamos abriendo un inventario externo (Cachear, Maletero, Suelo...), forzamos la pestaña principal
+            if (data.other) {
+                this.activeTab = 'inventory';
+            }
+            // Si es solo nuestro inventario, intentamos restaurar la tab guardada con validaciones de seguridad
+            else if (savedTab === 'weapons') {
                 this.activeTab = this.hasFirearm ? 'weapons' : 'inventory';
             } else if (savedTab === 'vehicle') {
-                // Solo restauramos 'vehicle' si el jugador es conductor
                 this.activeTab = this.isDriver ? 'vehicle' : 'inventory';
             } else {
-                // Para el resto de tabs (inventory, etc.) las restauramos directamente
                 this.activeTab = savedTab;
+            }
+
+            // i la pestaña restaurada es la de admin, pedimos los datos al instante
+            if (this.activeTab === 'admin' && this.isAdmin) {
+                this.adminCurrentCategory = null; // Nos aseguramos de mostrar el menú principal
+                this.fetchAdminData();
             }
 
             this.$nextTick(() => {
@@ -266,7 +345,6 @@ const InventoryContainer = Vue.createApp({
             }
         },
 
-
         /* ------------------------------------------------------------------
            B. UTILIDADES Y OBTENEDORES DE DATOS (HELPERS)
            ------------------------------------------------------------------ */
@@ -279,6 +357,7 @@ const InventoryContainer = Vue.createApp({
         getMaxQuality(itemName) {
             return itemName === 'armor' ? 50 : 100; // El armor básico maxea en 50
         },
+
         isItemDamaged(item) {
             if (!item || !item.name) return false;
             if (item.name === 'armor' || item.name === 'heavyarmor') {
@@ -288,12 +367,14 @@ const InventoryContainer = Vue.createApp({
             }
             return false;
         },
+
         getDurabilityPercentage(item) {
             if (!item || !item.info || item.info.quality === undefined) return 100;
             const maxQ = this.getMaxQuality(item.name);
             let percentage = (item.info.quality / maxQ) * 100;
             return Math.min(Math.max(percentage, 0), 100); // Nunca pasa de 100% ni baja de 0%
         },
+
         getDurabilityClass(item) {
             const percentage = this.getDurabilityPercentage(item);
             if (percentage > 75) return 'high';
@@ -302,20 +383,325 @@ const InventoryContainer = Vue.createApp({
         },
 
         changeTab(tabName) {
-            this.activeTab = tabName;
-            // Guardamos la última pestaña en la memoria del navegador de FiveM
-            localStorage.setItem('dp_inv_activeTab', tabName);
+            this.animateContainerHeight(() => {
+                this.activeTab = tabName;
+                localStorage.setItem('dp_inv_activeTab', tabName);
+
+                // Si es el panel de admin, SIEMPRE pide los datos actualizados de fondo
+                if (tabName === 'admin') {
+                    this.adminCurrentCategory = null;
+                    this.fetchAdminData();
+                }
+            });
         },
 
         doAction(actionType) {
+            // Si es un botón de vehículo y no tiene permiso por su asiento, no hace nada
+            if (actionType.startsWith('veh_') && !this.canAccessVehicleAction(actionType)) return;
+
+            // El botón de Rockstar Editor abre el sub-panel, no cierra el inventario
+            if (actionType === 'rockstar') {
+                this.animateContainerHeight(() => {
+                    this.rockstarPanelOpen = true;
+                });
+                return;
+            }
+
             // Enviamos la acción al client de FiveM
             axios.post("https://DP-Inventory/PerformAction", { action: actionType })
                 .catch((error) => console.error("Error realizando acción:", error));
 
-            // Solo cerramos el inventario si es Rockstar o Documentos
-            if (actionType === 'rockstar' || actionType === 'documentos') {
+            // Cerramos el inventario si es Cachear
+            if (actionType === 'cachear') {
                 this.closeInventory();
             }
+        },
+
+        closeRockstarPanel() {
+            this.animateContainerHeight(() => {
+                this.rockstarPanelOpen = false;
+            });
+        },
+
+        doRockstarAction(actionType) {
+            axios.post("https://DP-Inventory/PerformAction", { action: actionType })
+                .catch((error) => console.error("Error realizando acción Rockstar:", error));
+
+            // Estas acciones cierran el inventario para que FiveM tome el control
+            if (actionType === 'rockstar_editor') {
+                this.closeInventory();
+            }
+        },
+
+        saveInventoryPosition() {
+            axios.post("https://DP-Inventory/SaveInventoryPosition", { position: this.inventoryPosition })
+                .catch(e => console.error(e));
+        },
+
+        toggleSettingsSelect(event) {
+            this.isSettingsSelectOpen = !this.isSettingsSelectOpen;
+
+            if (this.isSettingsSelectOpen) {
+                // Sacamos las coordenadas exactas del botón en tu monitor
+                const rect = event.currentTarget.getBoundingClientRect();
+
+                // Calculamos si hay espacio debajo (necesitamos al menos 150px para el menú)
+                const spaceBelow = window.innerHeight - rect.bottom;
+                const dropUp = spaceBelow < 150;
+
+                // Hacemos que el menú sea un 120% más ancho que el botón
+                const menuWidth = rect.width;
+
+                // Estilos base (Fijo a la pantalla y alineado a la derecha del botón)
+                this.selectDropdownStyle = {
+                    position: 'fixed',
+                    left: (rect.right - menuWidth) + 'px',
+                    width: menuWidth + 'px',
+                    zIndex: 999999 // Por encima de todo
+                };
+
+                // ¡LA MAGIA DE LA DIRECCIÓN!
+                if (dropUp) {
+                    // Si no cabe abajo, lo pegamos por encima del botón
+                    this.selectDropdownStyle.bottom = (window.innerHeight - rect.top + 5) + 'px';
+                    this.selectDropdownStyle.top = 'auto';
+                } else {
+                    // Si cabe, lo pegamos por debajo
+                    this.selectDropdownStyle.top = (rect.bottom + 5) + 'px';
+                    this.selectDropdownStyle.bottom = 'auto';
+                }
+            }
+        },
+
+        closeDropdowns() {
+            this.isSettingsSelectOpen = false;
+        },
+
+        setInventoryPosition(val) {
+            this.inventoryPosition = val;
+            this.saveInventoryPosition();
+            this.isSettingsSelectOpen = false;
+        },
+
+        getPositionLabel(val) {
+            const labels = { bottom: 'Abajo', top: 'Arriba', left: 'Izquierda', right: 'Derecha' };
+            return labels[val] || 'Abajo';
+        },
+
+        // Generador visual del Tooltip de la Guía (Estilo Premium)
+        generateGuideTooltip(info) {
+            return `
+                <div style="padding: 4px; min-width: 220px; max-width: 280px; font-family: inherit; height: auto; white-space: normal;">
+                    <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 8px;">
+                        <span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 900; font-family: monospace; color: #fff; border: 1px solid rgba(255,255,255,0.2); white-space: nowrap;">
+                            ${info.key}
+                        </span>
+                        <span style="font-size: 12px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 0.5px;">
+                            ${info.title}
+                        </span>
+                    </div>
+                    <div style="font-size: 11px; color: #aaa; line-height: 1.5; font-weight: 500; white-space: normal; word-wrap: break-word; text-transform: none;">
+                        ${info.desc}
+                    </div>
+                </div>
+            `;
+        },
+
+        saveMovePreference() {
+            axios.post("https://DP-Inventory/SaveMovePreference", { status: this.moveWhileOpen }).catch(() => { });
+        },
+
+        // =========================================================
+        // CEREBRO DE PERMISOS DE VEHÍCULO
+        // =========================================================
+        canAccessVehicleAction(action) {
+            if (!this.inVehicle || !this.vehicleData) return false;
+
+            // Clases sin ventanillas ni drift (Motos=8, Bicis=13, Barcos=14, Helis=15, Aviones=16, Trenes=21)
+            const classNoWindows = [8, 13, 14, 15, 16, 21];
+            const isNoWindowClass = classNoWindows.includes(this.vehicleData.vehClass);
+
+            // ===============================================
+            // 1. CHEQUEOS FÍSICOS (¿El coche tiene esa pieza?)
+            // ===============================================
+            if (action === 'veh_drift' && isNoWindowClass) return false;
+            if (action === 'veh_anchor' && this.vehicleData.vehClass !== 14) return false;
+
+            // Bloqueo maestro para motos, bicis, barcos, aviones... NO tienen puertas ni ventanas usables
+            if (isNoWindowClass && (action.startsWith('veh_door_') || action.startsWith('veh_win_'))) {
+                return false;
+            }
+
+            if (action === 'veh_hood' && !this.vehicleData.hasDoor.hood) return false;
+            if (action === 'veh_trunk' && !this.vehicleData.hasDoor.trunk) return false;
+
+            if (action === 'veh_door_fl' && !this.vehicleData.hasDoor.fl) return false;
+            if (action === 'veh_door_fr' && !this.vehicleData.hasDoor.fr) return false;
+            if (action === 'veh_door_rl' && !this.vehicleData.hasDoor.rl) return false;
+            if (action === 'veh_door_rr' && !this.vehicleData.hasDoor.rr) return false;
+
+            if (action === 'veh_win_fl' && !this.vehicleData.hasDoor.fl) return false;
+            if (action === 'veh_win_fr' && !this.vehicleData.hasDoor.fr) return false;
+            if (action === 'veh_win_rl' && !this.vehicleData.hasDoor.rl) return false;
+            if (action === 'veh_win_rr' && !this.vehicleData.hasDoor.rr) return false;
+
+            // Físicas de asientos estándar
+            if (action === 'veh_sit_di' && this.vehicleData.seats <= 1) return false;
+            if (action === 'veh_sit_dd' && this.vehicleData.seats <= 1) return false;
+            if (action === 'veh_sit_ti' && this.vehicleData.seats <= 2) return false;
+            if (action === 'veh_sit_td' && this.vehicleData.seats <= 3) return false;
+
+            // Físicas de asientos extras (Ej: bus)
+            if (action.startsWith('veh_sit_') && !['di', 'dd', 'ti', 'td'].some(s => action.includes(s))) {
+                const seatId = parseInt(action.split('_').pop());
+                if (seatId > this.vehicleData.seats - 2) return false;
+            }
+
+            // ===============================================
+            // 2. PERMISOS DE ROL (¿Quién eres tú?)
+            // ===============================================
+            if (this.vehicleSeat === -1) return true; // Conductor puede todo lo que exista
+            if (action.startsWith('veh_sit_')) return true; // Todos pueden moverse
+
+            // Copiloto
+            if (this.vehicleSeat === 0) {
+                const allowed = ['veh_engine', 'veh_radio', 'veh_door_fr', 'veh_win_fr'];
+                return allowed.includes(action);
+            }
+            // Trasero Izquierdo
+            if (this.vehicleSeat === 1) {
+                return ['veh_door_rl', 'veh_win_rl'].includes(action);
+            }
+            // Trasero Derecho
+            if (this.vehicleSeat === 2) {
+                return ['veh_door_rr', 'veh_win_rr'].includes(action);
+            }
+
+            return false; // Bloquea todo lo demás para pasajeros
+        },
+
+        /* ------------------------------------------------------------------
+           ANIMACIÓN SUAVE DE ALTURA (HEIGHT)
+           ------------------------------------------------------------------ */
+        animateContainerHeight(actionCallback) {
+            const container = document.querySelector('.tab-content-animator');
+            if (!container) {
+                actionCallback();
+                return;
+            }
+
+            // Mantenemos siempre el layout estable para evitar errores de cálculo
+            container.style.overflow = 'hidden';
+
+            // 1. Fijar altura actual antes del cambio
+            const oldHeight = container.offsetHeight;
+            container.style.height = oldHeight + 'px';
+            container.style.transition = 'none';
+            void container.offsetHeight; // Forzar lectura (Reflow)
+
+            // 2. Ejecutar la acción que cambia el contenido
+            actionCallback();
+
+            // 3. Esperar a que Vue actualice el HTML
+            this.$nextTick(() => {
+                // Medimos la nueva altura real (sin hacks ni clases falsas)
+                container.style.height = 'auto';
+                const newHeight = container.offsetHeight;
+
+                // Volvemos a la vieja para preparar la rampa de salida
+                container.style.height = oldHeight + 'px';
+                void container.offsetHeight; // Reflow
+
+                // 4. Activar transición a la velocidad perfecta
+                container.style.transition = 'height 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
+                container.style.height = newHeight + 'px';
+
+                // 5. PROTECCIÓN ANTI-SPAM
+                if (this.heightAnimTimeout) clearTimeout(this.heightAnimTimeout);
+
+                this.heightAnimTimeout = setTimeout(() => {
+                    // Quitamos la altura fija pero mantenemos el overflow intacto
+                    if (container.style.height === newHeight + 'px') {
+                        container.style.height = 'auto';
+                        container.style.transition = 'none';
+                    }
+                }, 500);
+            });
+        },
+
+        // Captura cada letra que escribes y anima la lista
+        updateSearch(event) {
+            const newValue = event.target.value;
+            this.animateContainerHeight(() => {
+                this.adminSearchQuery = newValue;
+            });
+        },
+
+        toggleAdminSearch() {
+            if (this.showAdminSearch) {
+                // Si lo cerramos, vaciamos el texto envuelto en la animación para que se expanda suave
+                this.animateContainerHeight(() => {
+                    this.showAdminSearch = false;
+                    this.adminSearchQuery = '';
+                });
+            } else {
+                // Si lo abrimos, solo mostramos el input y le damos focus
+                this.showAdminSearch = true;
+                this.$nextTick(() => {
+                    const searchInput = document.getElementById('admin-search-input');
+                    if (searchInput) searchInput.focus();
+                });
+            }
+        },
+
+        fetchAdminData() {
+            // Pide los datos al servidor y los aplica instantáneamente sin animaciones de carga
+            return axios.post("https://DP-Inventory/GetAdminMasterData", {}).then((res) => {
+                if (res.data) this.adminData = res.data;
+            }).catch(e => console.error("Error cargando datos admin:", e));
+        },
+
+        returnToAdminMain() {
+            this.animateContainerHeight(() => {
+                this.adminCurrentCategory = null;
+                this.adminSearchQuery = '';
+                this.showAdminSearch = false;
+                this.fetchAdminData();
+            });
+        },
+
+        openAdminCategory(category) {
+            if (!this.adminData) {
+                // Si no hay datos, pedimos y luego animamos
+                this.fetchAdminData().then(() => {
+                    this.animateContainerHeight(() => {
+                        this.adminCurrentCategory = category;
+                    });
+                });
+            } else {
+                // Si ya hay datos, animamos al instante
+                this.animateContainerHeight(() => {
+                    this.adminCurrentCategory = category;
+                });
+            }
+        },
+
+        getAdminCategoryIcon() {
+            if (this.adminCurrentCategory === 'players') return 'mdi:account-group';
+            if (this.adminCurrentCategory === 'stashes') return 'fluent-mdl2:packages';
+            if (this.adminCurrentCategory === 'trunks') return 'mdi:speedometer-medium';
+            if (this.adminCurrentCategory === 'gloveboxes') return 'mdi:toolbox';
+            return 'mdi:database';
+        },
+
+        forceOpenAdmin(item) {
+            const isPlayer = !!item.name;
+            const targetId = isPlayer ? item.id : item;
+
+            axios.post("https://DP-Inventory/ForceOpenAdmin", {
+                type: isPlayer ? "player" : "stash",
+                id: targetId
+            });
         },
 
         getItemInSlot(slot, inventoryType) {
@@ -340,9 +726,95 @@ const InventoryContainer = Vue.createApp({
         },
 
         formatKey(key) {
-            return key.replace(/_/g, " ").charAt(0).toUpperCase() + key.slice(1);
+            const translations = {
+                // Armas
+                'quality': 'Calidad',
+                'ammo': 'Munición',
+                'serie': 'Nº de Serie',
+                'type': 'Tipo',
+                'uses': 'Usos',
+                'worth': 'Valor',
+                // Documentos / Personaje
+                'citizenid': 'ID Ciudadano',
+                'firstname': 'Nombre',
+                'lastname': 'Apellido',
+                'birthdate': 'Fecha de Nacimiento',
+                'gender': 'Género',
+                'nationality': 'Nacionalidad',
+                'url': 'URL',
+                // Genéricos
+                'description': 'Descripción',
+                'expiry': 'Caducidad',
+                'blood': 'Grupo Sanguíneo',
+                'job': 'Trabajo',
+                'callsign': 'Indicativo',
+            };
+            return translations[key.toLowerCase()]
+                || key.replace(/_/g, ' ').charAt(0).toUpperCase() + key.slice(1);
         },
 
+        formatValue(key, value) {
+            // Traduce géneros
+            if (key === 'gender') {
+                return value == 0 ? 'Masculino' : value == 1 ? 'Femenino' : value;
+            }
+            // Traduce códigos de nacionalidad ISO -> nombre completo
+            if (key === 'nationality') {
+                const countries = {
+                    'af': 'Afganistán', 'al': 'Albania', 'de': 'Alemania', 'ad': 'Andorra',
+                    'ao': 'Angola', 'ag': 'Antigua y Barbuda', 'sa': 'Arabia Saudita', 'dz': 'Argelia',
+                    'ar': 'Argentina', 'am': 'Armenia', 'au': 'Australia', 'at': 'Austria',
+                    'az': 'Azerbaiyán', 'bs': 'Bahamas', 'bh': 'Baréin', 'bd': 'Bangladés',
+                    'bb': 'Barbados', 'be': 'Bélgica', 'bz': 'Belice', 'bj': 'Benín',
+                    'bt': 'Bután', 'by': 'Bielorrusia', 'bo': 'Bolivia', 'ba': 'Bosnia y Herzegovina',
+                    'bw': 'Botsuana', 'br': 'Brasil', 'bn': 'Brunéi', 'bg': 'Bulgaria',
+                    'bf': 'Burkina Faso', 'bi': 'Burundi', 'cv': 'Cabo Verde', 'kh': 'Camboya',
+                    'cm': 'Camerún', 'ca': 'Canadá', 'qa': 'Catar', 'td': 'Chad',
+                    'cl': 'Chile', 'cn': 'China', 'cy': 'Chipre', 'va': 'Ciudad del Vaticano',
+                    'co': 'Colombia', 'km': 'Comoras', 'cg': 'Congo', 'cd': 'Congo (RDC)',
+                    'kp': 'Corea del Norte', 'kr': 'Corea del Sur', 'ci': 'Costa de Marfil', 'cr': 'Costa Rica',
+                    'hr': 'Croacia', 'cu': 'Cuba', 'dk': 'Dinamarca', 'dj': 'Yibuti',
+                    'dm': 'Dominica', 'ec': 'Ecuador', 'eg': 'Egipto', 'sv': 'El Salvador',
+                    'ae': 'Emiratos Árabes Unidos', 'er': 'Eritrea', 'sk': 'Eslovaquia', 'si': 'Eslovenia',
+                    'es': 'España', 'us': 'Estados Unidos', 'ee': 'Estonia', 'et': 'Etiopía',
+                    'ph': 'Filipinas', 'fi': 'Finlandia', 'fj': 'Fiyi', 'fr': 'Francia',
+                    'ga': 'Gabón', 'gm': 'Gambia', 'ge': 'Georgia', 'gh': 'Ghana',
+                    'gd': 'Granada', 'gr': 'Grecia', 'gt': 'Guatemala', 'gn': 'Guinea',
+                    'gw': 'Guinea-Bisáu', 'gq': 'Guinea Ecuatorial', 'gy': 'Guyana', 'ht': 'Haití',
+                    'hn': 'Honduras', 'hu': 'Hungría', 'in': 'India', 'id': 'Indonesia',
+                    'iq': 'Irak', 'ir': 'Irán', 'ie': 'Irlanda', 'is': 'Islandia',
+                    'il': 'Israel', 'it': 'Italia', 'jm': 'Jamaica', 'jp': 'Japón',
+                    'jo': 'Jordania', 'kz': 'Kazajistán', 'ke': 'Kenia', 'kg': 'Kirguistán',
+                    'ki': 'Kiribati', 'kw': 'Kuwait', 'la': 'Laos', 'ls': 'Lesoto',
+                    'lv': 'Letonia', 'lb': 'Líbano', 'lr': 'Liberia', 'ly': 'Libia',
+                    'li': 'Liechtenstein', 'lt': 'Lituania', 'lu': 'Luxemburgo', 'mk': 'Macedonia del Norte',
+                    'mg': 'Madagascar', 'my': 'Malasia', 'mw': 'Malaui', 'mv': 'Maldivas',
+                    'ml': 'Malí', 'mt': 'Malta', 'ma': 'Marruecos', 'mh': 'Islas Marshall',
+                    'mu': 'Mauricio', 'mr': 'Mauritania', 'mx': 'México', 'fm': 'Micronesia',
+                    'md': 'Moldavia', 'mc': 'Mónaco', 'mn': 'Mongolia', 'me': 'Montenegro',
+                    'mz': 'Mozambique', 'mm': 'Myanmar', 'na': 'Namibia', 'nr': 'Nauru',
+                    'np': 'Nepal', 'ni': 'Nicaragua', 'ne': 'Níger', 'ng': 'Nigeria',
+                    'no': 'Noruega', 'nz': 'Nueva Zelanda', 'om': 'Omán', 'nl': 'Países Bajos',
+                    'pk': 'Pakistán', 'pw': 'Palaos', 'pa': 'Panamá', 'pg': 'Papúa Nueva Guinea',
+                    'py': 'Paraguay', 'pe': 'Perú', 'pl': 'Polonia', 'pt': 'Portugal',
+                    'gb': 'Reino Unido', 'uk': 'Reino Unido', 'cf': 'República Centroafricana',
+                    'cz': 'República Checa', 'do': 'República Dominicana', 'rw': 'Ruanda', 'ro': 'Rumanía',
+                    'ru': 'Rusia', 'ws': 'Samoa', 'kn': 'San Cristóbal y Nieves', 'sm': 'San Marino',
+                    'vc': 'San Vicente y las Granadinas', 'lc': 'Santa Lucía', 'st': 'Santo Tomé y Príncipe',
+                    'sn': 'Senegal', 'rs': 'Serbia', 'sc': 'Seychelles', 'sl': 'Sierra Leona',
+                    'sg': 'Singapur', 'so': 'Somalia', 'lk': 'Sri Lanka', 'sz': 'Suazilandia',
+                    'za': 'Sudáfrica', 'sd': 'Sudán', 'ss': 'Sudán del Sur', 'se': 'Suecia',
+                    'ch': 'Suiza', 'sr': 'Surinam', 'th': 'Tailandia', 'tz': 'Tanzania',
+                    'tj': 'Tayikistán', 'tl': 'Timor Oriental', 'tg': 'Togo', 'to': 'Tonga',
+                    'tt': 'Trinidad y Tobago', 'tn': 'Túnez', 'tm': 'Turkmenistán', 'tr': 'Turquía',
+                    'tv': 'Tuvalu', 'ua': 'Ucrania', 'ug': 'Uganda', 'uy': 'Uruguay',
+                    'uz': 'Uzbekistán', 'vu': 'Vanuatu', 've': 'Venezuela', 'vn': 'Vietnam',
+                    'ye': 'Yemen', 'zm': 'Zambia', 'zw': 'Zimbabue',
+                };
+                return countries[String(value).toLowerCase()] || value;
+            }
+            return value;
+        },
 
         /* ------------------------------------------------------------------
            C. EVENTOS DE RATÓN (CLICS Y CONTEXT MENU)
@@ -1327,12 +1799,22 @@ const InventoryContainer = Vue.createApp({
             // Funciona desde el menú contextual Y desde el botón del panel WIP
             const item = this.showWeaponAttachments ? this.selectedWeapon : this.contextMenuItem;
             if (!item || !item.info || !item.info.serie) return;
+
             const el = document.createElement("textarea");
             el.value = item.info.serie;
             document.body.appendChild(el);
             el.select();
             document.execCommand("copy");
             document.body.removeChild(el);
+
+            // Cierra el menú contextual (opcional, pero queda más limpio)
+            this.showContextMenu = false;
+
+            // Enviar notificación a QBCore
+            axios.post("https://DP-Inventory/Notify", {
+                message: "Has copiado el Nº de Serie exitosamente.",
+                type: "success"
+            }).catch(e => console.error("Error enviando notificación:", e));
         },
 
         openWeaponAttachments() {
@@ -1448,23 +1930,84 @@ const InventoryContainer = Vue.createApp({
         generateTooltipContent(item) {
             if (!item) return "";
 
-            let content = `<div class="custom-tooltip"><div class="tooltip-header">${item.label}</div><hr class="tooltip-divider">`;
-            const description = item.info && item.info.description ? item.info.description.replace(/\n/g, "<br>") : item.description ? item.description.replace(/\n/g, "<br>") : "No description available.";
+            // 1. Determinar el icono automáticamente según el tipo de ítem
+            let icon = 'mdi:package-variant-closed'; // Por defecto
+            if (item.type === 'weapon' || item.name.startsWith('weapon_')) {
+                icon = 'mdi:pistol';
+            } else if (item.name.includes('id_card') || item.name.includes('license')) {
+                icon = 'mdi:card-account-details';
+            } else if (item.name.includes('phone') || item.name.includes('radio')) {
+                icon = 'mdi:cellphone';
+            } else if (item.name === 'money' || item.name === 'cash') {
+                icon = 'mdi:cash-multiple';
+            }
 
+            // 2. Construir la Cabecera
+            let content = `
+                <div class="modern-tooltip-container">
+                    <div class="modern-tooltip-header">
+                        <div class="modern-tooltip-icon">
+                            <iconify-icon icon="${icon}"></iconify-icon>
+                        </div>
+                        <div class="modern-tooltip-title">
+                            <h2>${item.label}</h2>
+                            <div class="modern-tooltip-weight">
+                                <iconify-icon icon="mdi:weight"></iconify-icon>
+                                ${item.weight !== undefined && item.weight !== null ? (item.weight / 1000).toFixed(1) : "0.0"} KG
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modern-tooltip-body">
+            `;
+
+            // 3. Construir la Metadata (Información extra como Quality, Serie, Nombre...)
             if (item.info && Object.keys(item.info).length > 0 && item.info.display !== false) {
-                for (const [key, value] of Object.entries(item.info)) {
+                content += `<div class="modern-tooltip-meta-grid">`;
+                const keyOrder = ['quality', 'ammo', 'serie', 'type', 'uses', 'worth',
+                    'firstname', 'lastname', 'birthdate', 'gender', 'nationality',
+                    'citizenid', 'blood', 'job', 'callsign', 'url'];
+
+                const sortedEntries = [
+                    ...keyOrder.filter(k => k in item.info).map(k => [k, item.info[k]]),
+                    ...Object.entries(item.info).filter(([k]) => !keyOrder.includes(k))
+                ];
+
+                for (const [key, value] of sortedEntries) {
                     if (key !== "description" && key !== "display") {
-                        let valueStr = value;
+                        let valueStr = this.formatValue(key, value);
                         if (key === "attachments") {
-                            valueStr = Object.keys(value).length > 0 ? "true" : "false";
+                            valueStr = Object.keys(value).length > 0 ? "Equipados" : "Ninguno";
                         }
-                        content += `<div class="tooltip-info"><span class="tooltip-info-key">${this.formatKey(key)}:</span> ${valueStr}</div>`;
+
+                        // Formateamos la calidad para que salga con %
+                        if (key === "quality") {
+                            valueStr = `${value}%`;
+                        }
+
+                        // Cajas separadas: Izquierda (Gris/Key) - Derecha (Blanco/Value)
+                        content += `
+                            <div class="modern-meta-row">
+                                <span class="meta-label">${this.formatKey(key)}</span>
+                                <span class="meta-value">${valueStr}</span>
+                            </div>
+                        `;
                     }
                 }
+                content += `</div>`;
             }
-            content += `<div class="tooltip-description">${description}</div>`;
-            content += `<div class="tooltip-weight"><i class="fas fa-weight-hanging"></i> ${item.weight !== undefined && item.weight !== null ? (item.weight / 1000).toFixed(1) : "N/A"}kg</div>`;
-            content += `</div>`;
+
+            // 4. Construir la Descripción (Si la hay)
+            const description = item.info && item.info.description ? item.info.description.replace(/\n/g, "<br>") : item.description ? item.description.replace(/\n/g, "<br>") : "";
+
+            if (description) {
+                content += `
+                    <div class="modern-tooltip-desc">
+                        ${description}
+                    </div>
+                `;
+            }
+
+            content += `</div></div>`; // Cierre del body y container
             return content;
         },
 
@@ -1499,10 +2042,29 @@ const InventoryContainer = Vue.createApp({
         // Escuchar teclas para cerrar inventario
         window.addEventListener("keydown", (event) => {
             const key = event.key;
-            if (key === "Escape" || key === "Tab") {
+
+            // 1. Cerrar inventario con ESC o F2
+            if (key === "Escape" || key === "F2") {
                 if (this.isInventoryOpen) {
                     this.closeInventory();
                 }
+            }
+
+            // 2. MODO CURSOR (TECLA J)
+            if (key.toLowerCase() === 'j' && this.isInventoryOpen) {
+                // Evitamos que se active si estás escribiendo en el buscador de admin o en la cantidad
+                const activeTag = document.activeElement ? document.activeElement.tagName : '';
+                if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+                // Invertimos el estado
+                this.cursorModeActive = !this.cursorModeActive;
+
+                // Por seguridad, cerramos submenús que pudieran quedarse flotando
+                if (this.showContextMenu) this.showContextMenu = false;
+                if (this.showInspectModal) this.closeInspectModal();
+
+                // Avisamos a Lua para que nos devuelva el control del personaje
+                axios.post("https://DP-Inventory/toggleCursorMode", {}).catch(e => console.error(e));
             }
         });
 
@@ -1512,28 +2074,53 @@ const InventoryContainer = Vue.createApp({
                 case "open":
                     this.openInventory(event.data);
                     break;
+
                 case "close":
                     this.closeInventory();
                     break;
+
                 case "update":
                     this.updateInventory(event.data);
                     break;
+
                 case "toggleHotbar":
                     this.toggleHotbar(event.data);
                     break;
+
                 case "setActiveSlot":
                     this.setActiveSlot(event.data.slot);
                     break;
+
                 case "itemBox":
                     this.showItemNotification(event.data);
                     break;
+
                 case "requiredItem":
                     this.showRequiredItem(event.data);
                     break;
+
+                // Cierra solo el inventario secundario (Suelos, maleteros, etc) de forma silenciosa
+                case "forceCloseOther":
+                    if (!this.isOtherInventoryEmpty) {
+                        // Le decimos al servidor que quite el "cerrojo" de ese maletero o stash
+                        axios.post("https://DP-Inventory/CloseSecondaryInventory", { name: this.otherInventoryName })
+                            .catch(e => console.error(e));
+
+                        // Limpiamos la UI para que desaparezca la caja y se centre el inventario
+                        this.otherInventory = {};
+                        this.otherInventoryName = "";
+                        this.isOtherInventoryEmpty = true;
+                    }
+                    break;
+
                 case "checkVehicleState":
                     this.isDriver = event.data.isDriver;
+                    this.inVehicle = event.data.inVehicle;
+                    this.vehicleSeat = event.data.seat;
+                    this.vehicleData = event.data.vehData || null;
 
-                    if (this.activeTab === 'vehicle' && !this.isDriver) {
+                    // AHORA COMPROBAMOS inVehicle PARA NO ECHAR A LOS PASAJEROS
+                    if (this.activeTab === 'vehicle' && !this.inVehicle) {
                         this.changeTab('inventory');
                     }
 
@@ -1557,6 +2144,21 @@ const InventoryContainer = Vue.createApp({
 
                 default:
                     console.warn(`Unexpected action: ${event.data.action}`);
+            }
+        });
+
+        // ==========================================
+        // DETECTOR INTELIGENTE DE INPUTS (Para escribir)
+        // ==========================================
+        document.addEventListener('focusin', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                axios.post("https://DP-Inventory/SetTypingFocus", { isTyping: true }).catch(() => { });
+            }
+        });
+
+        document.addEventListener('focusout', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                axios.post("https://DP-Inventory/SetTypingFocus", { isTyping: false }).catch(() => { });
             }
         });
     },
