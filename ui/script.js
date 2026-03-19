@@ -12,34 +12,70 @@ const InventoryContainer = Vue.createApp({
     computed: {
         playerWeight() {
             const weight = Object.values(this.playerInventory).reduce((total, item) => {
-                if (item && item.weight !== undefined && item.amount !== undefined) {
-                    return total + item.weight * item.amount;
+                if (item && item.amount !== undefined) {
+                    // Si no existe, usa el item.weight genérico.
+                    const itemWeight = (item.info && item.info.weight !== undefined)
+                        ? item.info.weight
+                        : (item.weight !== undefined ? item.weight : 0);
+
+                    return total + (itemWeight * item.amount);
                 }
                 return total;
             }, 0);
             return isNaN(weight) ? 0 : weight;
         },
+
         otherInventoryWeight() {
             const weight = Object.values(this.otherInventory).reduce((total, item) => {
-                if (item && item.weight !== undefined && item.amount !== undefined) {
-                    return total + item.weight * item.amount;
+                if (item && item.amount !== undefined) {
+                    // Misma lógica para el inventario secundario (suelo, maleteros, stashes)
+                    const itemWeight = (item.info && item.info.weight !== undefined)
+                        ? item.info.weight
+                        : (item.weight !== undefined ? item.weight : 0);
+
+                    return total + (itemWeight * item.amount);
                 }
                 return total;
             }, 0);
             return isNaN(weight) ? 0 : weight;
         },
+
         weightBarClass() {
             const weightPercentage = (this.playerWeight / this.maxWeight) * 100;
             if (weightPercentage < 50) return "low";
             if (weightPercentage < 75) return "medium";
             return "high";
         },
+
         otherWeightBarClass() {
             const weightPercentage = (this.otherInventoryWeight / this.otherInventoryMaxWeight) * 100;
             if (weightPercentage < 50) return "low";
             if (weightPercentage < 75) return "medium";
             return "high";
         },
+
+        // Slots extra que otorga la mochila equipada en slot 101
+        extraBackpackSlots() {
+            const backpack = this.playerInventory[101];
+            if (!backpack || !backpack.name) return 0;
+            const name = backpack.name;
+            if (name === 'backpack_1') return 5;
+            if (name === 'backpack_2') return 10;
+            if (name === 'backpack_3') return 15;
+            if (name === 'backpack_4') return 20;
+            return 0;
+        },
+
+        // Slots base: siempre fijos, nunca incluye los de mochila
+        basePlayerSlots() {
+            return this.baseSlots;
+        },
+
+        // Slots totales reales: base + mochila (reactivo en tiempo real)
+        totalPlayerSlots() {
+            return this.baseSlots + this.extraBackpackSlots;
+        },
+
         extraSeats() {
             // Genera botones extra para vehículos con más de 4 plazas (Limusinas, Buses...)
             if (!this.vehicleData || this.vehicleData.seats <= 4) return [];
@@ -50,15 +86,18 @@ const InventoryContainer = Vue.createApp({
             }
             return extras;
         },
+
         shouldCenterInventory() {
             return this.isOtherInventoryEmpty;
         },
+
         // Escanea la mochila buscando un ítem que sea tipo arma
         hasFirearm() {
             return Object.values(this.playerInventory).some(item =>
                 item && item.type === 'weapon' && item.name && item.name.toLowerCase().startsWith('weapon_')
             );
         },
+
         adminList() {
             if (!this.adminData || !this.adminCurrentCategory) return [];
 
@@ -89,8 +128,11 @@ const InventoryContainer = Vue.createApp({
     // ==========================================
     watch: {
         transferAmount(newVal) {
-            // Permetem 0 o buit. Només evitem que posin números negatius.
             if (newVal !== null && newVal < 0) this.transferAmount = 0;
+        },
+        // Watcher para actualizar totalSlots cuando cambia la mochila
+        extraBackpackSlots(newVal) {
+            this.totalSlots = this.baseSlots + newVal;
         },
     },
 
@@ -108,6 +150,7 @@ const InventoryContainer = Vue.createApp({
                 // Config Options
                 maxWeight: 0,
                 totalSlots: 0,
+                baseSlots: 0,
                 // Escape Key
                 isInventoryOpen: false,
                 // Single pane
@@ -144,12 +187,8 @@ const InventoryContainer = Vue.createApp({
                 showHotbar: false,
                 hotbarItems: [],
                 activeHotbarSlot: null,
-                // Notification box
-                showNotification: false,
-                notificationText: "",
-                notificationImage: "",
-                notificationType: "added",
-                notificationAmount: 1,
+                // Cola de notificaciones
+                itemNotifications: [],
                 // Required items box
                 showRequiredItems: false,
                 requiredItems: [],
@@ -179,6 +218,7 @@ const InventoryContainer = Vue.createApp({
                 ghostElement: null,
                 dragStartInventoryType: "player",
                 transferAmount: null,
+                isCtrlDrag: false,
                 // Pestañas
                 activeTab: localStorage.getItem('dp_inv_activeTab') || 'inventory',
                 isDriver: false,
@@ -202,7 +242,7 @@ const InventoryContainer = Vue.createApp({
                 inventoryPosition: 'bottom',
                 isSettingsSelectOpen: false,
                 selectDropdownStyle: {},
-                // NUEVA LISTA DE GUÍA Y CONTROLES
+                // LISTA DE GUÍA Y CONTROLES
                 inventoryGuideList: [
                     { id: 1, key: 'F2', title: 'Abrir / Cerrar Menú', desc: 'Abre y cierra la interfaz del inventario. (Esta tecla puede ser modificada a tu gusto en los ajustes de teclado de FiveM).' },
                     { id: 2, key: 'J', title: 'Modo Cursor Libre', desc: 'Desvincula la cámara del personaje y te permite utilizar el ratón de forma libre para mover ventanas y explorar la UI cómodamente.' },
@@ -214,8 +254,19 @@ const InventoryContainer = Vue.createApp({
                     { id: 8, key: 'CLICK DER.', title: 'Menú Contextual', desc: 'Haz click derecho sobre un ítem para desplegar opciones avanzadas: Usar, Dar a jugador cercano, Tirar, Inspeccionar arma, etc.' },
                     { id: 9, key: 'CLICK DER. (RÁPIDO)', title: 'Transferencia Rápida', desc: 'Teniendo un maletero, alijo o el suelo abierto, haz click derecho sobre un ítem para pasarlo instantáneamente de un inventario a otro.' },
                     { id: 10, key: 'SHIFT + CLICK IZQ.', title: 'Dividir Cantidades', desc: 'Al mantener presionada la tecla Shift mientras haces click sobre un ítem apilado, separarás la mitad exacta de la cantidad actual.' },
-                    { id: 11, key: 'DOBLE CLICK', title: 'Uso Instantáneo', desc: 'Haz doble click izquierdo rápido sobre cualquier ítem consumible (agua, comida) o arma para usarlo o equiparlo al instante sin menús.' }
+                    { id: 11, key: 'DOBLE CLICK', title: 'Uso Instantáneo', desc: 'Haz doble click izquierdo rápido sobre cualquier ítem consumible (agua, comida) o arma para usarlo o equiparlo al instante sin menús.' },
+                    { id: 12, key: 'CTRL + ARRASTRAR', title: 'Split Dinámico', desc: 'Mantén pulsado CTRL al arrastrar (o al hacer click derecho rápido) un ítem para mover exactamente la mitad de su cantidad al destino indicado.' }
                 ],
+                // Sonidos del inventario
+                uiSoundsEnabled: true,
+                currentSoundType: 'inv',
+                // Buscadores de Inventario
+                playerSearchQuery: "",
+                showPlayerSearch: false,
+                otherSearchQuery: "",
+                showOtherSearch: false,
+                // Radio
+                hasVehicleRadio: false,
             };
         },
 
@@ -227,6 +278,7 @@ const InventoryContainer = Vue.createApp({
             this.isInventoryOpen = true;
             this.maxWeight = data.maxweight;
             this.totalSlots = data.slots;
+            this.baseSlots = data.slots;
 
             this.isDriver = data.isDriver || false;
             this.inVehicle = data.inVehicle || false;
@@ -336,7 +388,16 @@ const InventoryContainer = Vue.createApp({
             this.clearDragData();
             let inventoryName = this.otherInventoryName;
             this.isInventoryReady = false;
+
+            // --- NUEVO: Guardar preferencias antes de purgar el estado ---
+            let currentSoundState = this.uiSoundsEnabled;
+            let currentMoveState = this.moveWhileOpen;
+
             Object.assign(this, this.getInitialState());
+
+            // --- NUEVO: Restaurar preferencias ---
+            this.uiSoundsEnabled = currentSoundState;
+            this.moveWhileOpen = currentMoveState;
 
             try {
                 await axios.post("https://DP-Inventory/CloseInventory", { name: inventoryName });
@@ -351,6 +412,47 @@ const InventoryContainer = Vue.createApp({
 
         clearTransferAmount() {
             this.transferAmount = null;
+        },
+
+        togglePlayerSearch() {
+            if (this.showPlayerSearch) {
+                this.showPlayerSearch = false;
+                this.playerSearchQuery = '';
+            } else {
+                this.showPlayerSearch = true;
+                this.$nextTick(() => {
+                    const input = document.getElementById('player-search-input');
+                    if (input) input.focus();
+                });
+            }
+        },
+
+        toggleOtherSearch() {
+            if (this.showOtherSearch) {
+                this.showOtherSearch = false;
+                this.otherSearchQuery = '';
+            } else {
+                this.showOtherSearch = true;
+                this.$nextTick(() => {
+                    const input = document.getElementById('other-search-input');
+                    if (input) input.focus();
+                });
+            }
+        },
+
+        matchesSearch(item, query) {
+            // Si el buscador está vacío o cerrado, todo brilla con normalidad
+            if (!query || query.trim() === "") return true;
+
+            // Si hay una búsqueda activa pero el slot está vacío, se oscurece
+            if (!item) return false;
+
+            // Comprobamos si el nombre técnico o la etiqueta coinciden
+            const lowerQuery = query.toLowerCase().trim();
+            const labelMatch = item.label && item.label.toLowerCase().includes(lowerQuery);
+            const nameMatch = item.name && item.name.toLowerCase().includes(lowerQuery);
+
+            return labelMatch || nameMatch;
         },
 
         // SISTEMA INTELIGENTE DE DURABILIDAD
@@ -384,6 +486,7 @@ const InventoryContainer = Vue.createApp({
 
         changeTab(tabName) {
             this.animateContainerHeight(() => {
+                this.playSound('tab');
                 this.activeTab = tabName;
                 localStorage.setItem('dp_inv_activeTab', tabName);
 
@@ -398,6 +501,8 @@ const InventoryContainer = Vue.createApp({
         doAction(actionType) {
             // Si es un botón de vehículo y no tiene permiso por su asiento, no hace nada
             if (actionType.startsWith('veh_') && !this.canAccessVehicleAction(actionType)) return;
+
+            this.playSound('click');
 
             // El botón de Rockstar Editor abre el sub-panel, no cierra el inventario
             if (actionType === 'rockstar') {
@@ -509,6 +614,57 @@ const InventoryContainer = Vue.createApp({
 
         saveMovePreference() {
             axios.post("https://DP-Inventory/SaveMovePreference", { status: this.moveWhileOpen }).catch(() => { });
+        },
+
+        abrirRadioInventario() {
+            // Avisamos a Lua para que cierre el inventario y abra la radio
+            axios.post("https://DP-Inventory/abrirRadioDesdeInventario", {}).catch(() => { });
+        },
+
+        // Detector de clases de vehículos compatibles con Drift
+        isValidDriftVehicle(vehClass) {
+            if (vehClass === undefined || vehClass === null) return false;
+
+            // Clases en GTA V que NO son coches de 4 ruedas:
+            // 8: Motos | 13: Bicicletas | 14: Barcos | 15: Helicópteros | 16: Aviones | 21: Trenes
+            const invalidClasses = [8, 13, 14, 15, 16, 21];
+
+            // Devuelve TRUE si la clase NO está en la lista de inválidos
+            return !invalidClasses.includes(vehClass);
+        },
+
+        // =========================================
+        // MOTOR DE AUDIO DEL INVENTARIO
+        // =========================================
+        saveSoundPreference() {
+            // Mandamos el estado al LUA para que lo guarde en la BD
+            axios.post("https://DP-Inventory/SaveSoundPref", { status: this.uiSoundsEnabled }).catch(() => { });
+
+            // Sonido de prueba si lo acabas de activar
+            if (this.uiSoundsEnabled) this.playSound('click');
+        },
+
+        playSound(soundName) {
+            if (!this.uiSoundsEnabled) return; // Si están apagados en ajustes, no suena nada
+
+            const sounds = {
+                'click': { file: 'sounds/click.mp3', vol: 0.5 },
+                'tab': { file: 'sounds/tab.mp3', vol: 0.4 },
+                'drop': { file: 'sounds/drop.mp3', vol: 0.6 },
+                'open_inv': { file: 'sounds/open_inv.mp3', vol: 0.7 },
+                'close_inv': { file: 'sounds/close_inv.mp3', vol: 0.7 },
+                'open_trunk': { file: 'sounds/open_trunk.mp3', vol: 0.8 },
+                'close_trunk': { file: 'sounds/close_trunk.mp3', vol: 0.8 },
+                'open_stash': { file: 'sounds/open_stash.mp3', vol: 0.7 },
+                'close_stash': { file: 'sounds/close_stash.mp3', vol: 0.7 }
+            };
+
+            const sound = sounds[soundName];
+            if (sound) {
+                let audio = new Audio(sound.file);
+                audio.volume = sound.vol;
+                audio.play().catch(() => { });
+            }
         },
 
         // =========================================================
@@ -847,16 +1003,22 @@ const InventoryContainer = Vue.createApp({
                     this.startDrag(event, slot, inventory);
                 }
             }
+
             // Clic Derecho (Comprar, Mover o Menú Contextual)
             else if (event.button === 2 && itemInSlot) {
+                this.isCtrlDrag = event.ctrlKey;
+
                 if (this.otherInventoryName.startsWith("shop-")) {
                     this.handlePurchase(slot, itemInSlot.slot, itemInSlot, 1);
+                    this.isCtrlDrag = false;
                     return;
                 }
                 if (!this.isOtherInventoryEmpty) {
                     this.moveItemBetweenInventories(itemInSlot, inventory);
+                    this.isCtrlDrag = false;
                 } else {
                     this.showContextMenuOptions(event, itemInSlot);
+                    this.isCtrlDrag = false;
                 }
             }
         },
@@ -957,6 +1119,7 @@ const InventoryContainer = Vue.createApp({
            ------------------------------------------------------------------ */
         openInspectModal(item) {
             if (!item) return;
+            this.playSound('open_inv');
             this.inspectingItem = item;
             this.inspectRotation = 0;
             this.inspectZoom = 1;
@@ -965,6 +1128,7 @@ const InventoryContainer = Vue.createApp({
         },
 
         closeInspectModal() {
+            this.playSound('close_inv');
             this.showInspectModal = false;
             setTimeout(() => {
                 this.inspectingItem = null;
@@ -1005,6 +1169,9 @@ const InventoryContainer = Vue.createApp({
             const item = this.getItemInSlot(slot, inventoryType);
             if (!item) return;
 
+            // --- NUEVO: Detectar si se está pulsando CTRL ---
+            this.isCtrlDrag = event.ctrlKey;
+
             if (item && item.type === 'weapon') {
                 axios.post("https://DP-Inventory/HolsterWeapon", {
                     item: item,
@@ -1019,6 +1186,14 @@ const InventoryContainer = Vue.createApp({
             if (!slotElement) return;
 
             const ghostElement = this.createGhostElement(slotElement);
+
+            if (this.isCtrlDrag && item.amount > 1) {
+                const amountElement = ghostElement.querySelector('.item-slot-amount p');
+                if (amountElement) {
+                    amountElement.innerText = 'x' + Math.ceil(item.amount / 2);
+                }
+            }
+
             document.body.appendChild(ghostElement);
 
             const offsetX = ghostElement.offsetWidth / 2;
@@ -1044,6 +1219,9 @@ const InventoryContainer = Vue.createApp({
             ghostElement.style.width = getComputedStyle(slotElement).width;
             ghostElement.style.height = getComputedStyle(slotElement).height;
             ghostElement.style.boxSizing = "border-box";
+            ghostElement.style.transition = "none";
+            ghostElement.style.animation = "none";
+
             return ghostElement;
         },
 
@@ -1137,8 +1315,8 @@ const InventoryContainer = Vue.createApp({
             }
             this.currentlyDraggingItem = null;
             this.currentlyDraggingSlot = null;
+            this.isCtrlDrag = false;
         },
-
 
         /* ------------------------------------------------------------------
            E. LÓGICA DE MOVIMIENTO DE ÍTEMS (HANDLERS)
@@ -1200,6 +1378,10 @@ const InventoryContainer = Vue.createApp({
             if (this.isOtherInventoryEmpty && this.dragStartInventoryType === "player") {
 
                 let dropAmount = (this.transferAmount && this.transferAmount > 0) ? this.transferAmount : this.currentlyDraggingItem.amount;
+
+                if (this.isCtrlDrag && this.currentlyDraggingItem.amount > 1) {
+                    dropAmount = Math.ceil(this.currentlyDraggingItem.amount / 2);
+                }
 
                 // Evitar que tire más de lo que tiene
                 if (dropAmount > this.currentlyDraggingItem.amount) {
@@ -1265,6 +1447,10 @@ const InventoryContainer = Vue.createApp({
 
                 let amountToTransfer = (this.transferAmount && this.transferAmount > 0) ? this.transferAmount : sourceItem.amount;
 
+                if (this.isCtrlDrag && sourceItem.amount > 1) {
+                    amountToTransfer = Math.ceil(sourceItem.amount / 2);
+                }
+
                 if (targetInventoryType === "player" && (targetSlotNumber === 101 || targetSlotNumber === 102)) {
                     amountToTransfer = 1;
                 }
@@ -1282,6 +1468,8 @@ const InventoryContainer = Vue.createApp({
                 }
 
                 const targetItem = targetInventory[targetSlotNumber];
+
+                this.playSound('drop');
 
                 if (targetItem) {
                     // 1. Si los ítems se llaman EXACTAMENTE IGUAL
@@ -1341,6 +1529,10 @@ const InventoryContainer = Vue.createApp({
             const sourceItem = sourceInventory[item.slot];
             const amountToTransfer = (this.transferAmount && this.transferAmount > 0) ? this.transferAmount : sourceItem.amount;
 
+            if (this.isCtrlDrag && sourceItem.amount > 1) {
+                amountToTransfer = Math.ceil(sourceItem.amount / 2);
+            }
+
             let targetSlot = null;
 
             if (!sourceItem || sourceItem.amount < amountToTransfer) {
@@ -1352,6 +1544,8 @@ const InventoryContainer = Vue.createApp({
                 this.inventoryError(item.slot);
                 return;
             }
+
+            this.playSound('drop');
 
             // ANTI-REPARACIÓN (Trata a los chalecos dañados como ÍTEMS ÚNICOS)
             let isDamagedArmor = false;
@@ -1518,6 +1712,8 @@ const InventoryContainer = Vue.createApp({
                             delete this.playerInventory[playerItemKey];
                         }
 
+                        this.playSound('drop');
+
                         // Añadir el item al suelo (otherInventory)
                         this.otherInventory[1] = newItem;
 
@@ -1620,7 +1816,11 @@ const InventoryContainer = Vue.createApp({
                     inventory: "player",
                     item: item,
                 }).then(() => {
-                    if (item.shouldClose) this.closeInventory();
+                    // ANTI-RACE CONDITION: Si es una mochila custom, NO cerramos la UI.
+                    // Esperamos a que el servidor mande la orden de abrir el Stash.
+                    if (item.shouldClose && !item.name.includes("custom_bag")) {
+                        this.closeInventory();
+                    }
                 }).catch((error) => {
                     console.error("Error using the item: ", error);
                 });
@@ -1821,6 +2021,7 @@ const InventoryContainer = Vue.createApp({
             if (!this.contextMenuItem) return;
 
             if (!this.showWeaponAttachments) {
+                this.playSound('open_inv');
                 this.selectedWeapon = this.contextMenuItem;
                 this.showWeaponAttachments = true;
 
@@ -1835,6 +2036,7 @@ const InventoryContainer = Vue.createApp({
                     })
                     .catch((error) => console.error(error));
             } else {
+                this.playSound('close_inv');
                 this.showWeaponAttachments = false;
                 this.selectedWeapon = null;
                 this.selectedWeaponAttachments = [];
@@ -1892,13 +2094,35 @@ const InventoryContainer = Vue.createApp({
         },
 
         showItemNotification(itemData) {
-            this.notificationText = itemData.item.label;
-            this.notificationImage = "images/" + itemData.item.image;
-            this.notificationType = itemData.type === "add" ? "Received" : itemData.type === "use" ? "Used" : "Removed";
-            this.notificationAmount = itemData.amount || 1;
-            this.showNotification = true;
+            // Guardamos el tipo crudo (para la clase CSS) y el texto traducido
+            let rawAction = itemData.type; 
+            let translated = "ELIMINADO";
+
+            if (rawAction === "add") translated = "RECIBIDO";
+            else if (rawAction === "use") translated = "USADO";
+            else if (rawAction === "equip") translated = "EQUIPADO";
+            else if (rawAction === "holster") translated = "GUARDADO";
+
+            const newNotif = {
+                id: Date.now() + Math.random(),
+                text: itemData.item.label,
+                image: "images/" + itemData.item.image,
+                action: rawAction, // <--- Nueva variable para la clase CSS
+                translatedAction: translated, // <--- Nueva variable para el texto
+                amount: itemData.amount || 1
+            };
+
+            // Añadimos al inicio (arriba)
+            this.itemNotifications.unshift(newNotif);
+
+            // Máximo 5 cajas
+            if (this.itemNotifications.length > 5) {
+                this.itemNotifications.pop();
+            }
+
+            // Duración de 3 segundos
             setTimeout(() => {
-                this.showNotification = false;
+                this.itemNotifications = this.itemNotifications.filter(n => n.id !== newNotif.id);
             }, 3000);
         },
 
@@ -1942,6 +2166,11 @@ const InventoryContainer = Vue.createApp({
                 icon = 'mdi:cash-multiple';
             }
 
+            // Calculamos el peso a mostrar priorizando el dinámico de la mochila
+            const displayWeight = (item.info && item.info.weight !== undefined)
+                ? item.info.weight
+                : (item.weight !== undefined && item.weight !== null ? item.weight : 0);
+
             // 2. Construir la Cabecera
             let content = `
                 <div class="modern-tooltip-container">
@@ -1953,7 +2182,7 @@ const InventoryContainer = Vue.createApp({
                             <h2>${item.label}</h2>
                             <div class="modern-tooltip-weight">
                                 <iconify-icon icon="mdi:weight"></iconify-icon>
-                                ${item.weight !== undefined && item.weight !== null ? (item.weight / 1000).toFixed(1) : "0.0"} KG
+                                ${(displayWeight / 1000).toFixed(1)} KG
                             </div>
                         </div>
                     </div>
@@ -2073,10 +2302,26 @@ const InventoryContainer = Vue.createApp({
             switch (event.data.action) {
                 case "open":
                     this.openInventory(event.data);
+
+                    // MOTOR DE SONIDOS (INTELIGENCIA DE APERTURA)
+                    let invName = (event.data.otherInventoryName || "").toLowerCase();
+
+                    if (invName.includes("trunk") || invName.includes("maletero")) {
+                        this.currentSoundType = 'trunk';
+                        this.playSound('open_trunk');
+                    } else if (invName.includes("stash") || invName.includes("glovebox") || invName.includes("guantera") || invName.includes("alijo") || invName.includes("drop")) {
+                        this.currentSoundType = 'stash';
+                        this.playSound('open_stash');
+                    } else {
+                        this.currentSoundType = 'inv';
+                        this.playSound('open_inv');
+                    }
                     break;
 
                 case "close":
                     this.closeInventory();
+                    this.playSound('close_' + this.currentSoundType);
+                    this.currentSoundType = 'inv';
                     break;
 
                 case "update":
@@ -2142,6 +2387,14 @@ const InventoryContainer = Vue.createApp({
                     }
                     break;
 
+                case "setSoundPref":
+                    this.uiSoundsEnabled = event.data.status;
+                    break;
+
+                case "updateVehicleRadio":
+                    this.hasVehicleRadio = event.data.status;
+                    break;
+
                 default:
                     console.warn(`Unexpected action: ${event.data.action}`);
             }
@@ -2151,13 +2404,19 @@ const InventoryContainer = Vue.createApp({
         // DETECTOR INTELIGENTE DE INPUTS (Para escribir)
         // ==========================================
         document.addEventListener('focusin', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            const isTextInput = e.target.tagName === 'TEXTAREA' ||
+                (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio');
+
+            if (isTextInput) {
                 axios.post("https://DP-Inventory/SetTypingFocus", { isTyping: true }).catch(() => { });
             }
         });
 
         document.addEventListener('focusout', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            const isTextInput = e.target.tagName === 'TEXTAREA' ||
+                (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio');
+
+            if (isTextInput) {
                 axios.post("https://DP-Inventory/SetTypingFocus", { isTyping: false }).catch(() => { });
             }
         });

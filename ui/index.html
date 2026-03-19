@@ -55,7 +55,7 @@
 
                 <div class="equipment-sidebar" v-show="activeTab === 'inventory'">
                     <div class="item-slot equipment-slot" data-slot="102"
-                        :class="{ 'invalid-slot-highlight': errorSlot === 102 }"
+                        :class="{ 'invalid-slot-highlight': errorSlot === 102, 'slot-dimmed': !matchesSearch(getItemInSlot(102, 'player'), playerSearchQuery) }"
                         @dblclick="getItemInSlot(102, 'player') && useItem(getItemInSlot(102, 'player'))"
                         @mousedown="event => handleMouseDown(event, 102, 'player')" @dragover.prevent>
 
@@ -82,7 +82,7 @@
                     </div>
 
                     <div class="item-slot equipment-slot" data-slot="101"
-                        :class="{ 'invalid-slot-highlight': errorSlot === 101 }"
+                        :class="{ 'invalid-slot-highlight': errorSlot === 101, 'slot-dimmed': !matchesSearch(getItemInSlot(101, 'player'), playerSearchQuery) }"
                         @dblclick="getItemInSlot(101, 'player') && useItem(getItemInSlot(101, 'player'))"
                         @mousedown="event => handleMouseDown(event, 101, 'player')" @dragover.prevent>
 
@@ -123,6 +123,19 @@
                             </div>
 
                             <div class="header-actions">
+                                <div class="weight-icon-btn expandable-search" :class="{ 'active': showPlayerSearch }"
+                                    @click="!showPlayerSearch ? togglePlayerSearch() : null"
+                                    v-tooltip.bottom="!showPlayerSearch ? 'Buscar ítem' : ''">
+                                    <div class="search-icon-fixed">
+                                        <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
+                                    </div>
+                                    <input type="text" id="player-search-input" class="admin-search-input-integrated"
+                                        v-model="playerSearchQuery" placeholder="Buscar..." autocomplete="off" />
+                                    <div class="close-search-btn" @click.stop="togglePlayerSearch()">
+                                        <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+                                    </div>
+                                </div>
+
                                 <div class="header-amount-input">
                                     <label>CANTIDAD</label>
                                     <input type="number" v-model="transferAmount" min="0" placeholder="0" />
@@ -140,10 +153,10 @@
                                 :class="weightBarClass"></div>
                         </div>
 
-                        <div class="inventory-grid">
+                        <div class="inventory-grid custom-scrollbar">
                             <div class="item-grid">
-                                <div v-for="slot in totalSlots" :key="slot" class="item-slot" :data-slot="slot"
-                                    :class="{ 'invalid-slot-highlight': errorSlot === slot }"
+                                <div v-for="slot in basePlayerSlots" :key="slot" class="item-slot" :data-slot="slot"
+                                    :class="{ 'invalid-slot-highlight': errorSlot === slot, 'slot-dimmed': !matchesSearch(getItemInSlot(slot, 'player'), playerSearchQuery) }"
                                     @dblclick="getItemInSlot(slot, 'player') && useItem(getItemInSlot(slot, 'player'))"
                                     @mousedown="event => handleMouseDown(event, slot, 'player')">
 
@@ -167,6 +180,42 @@
                                             </div>
                                         </div>
                                     </template>
+                                </div>
+                            </div>
+
+                            <div v-if="extraBackpackSlots > 0">
+                                <div class="backpack-separator">
+                                    <iconify-icon icon="game-icons:backpack"></iconify-icon>
+                                    <span>MOCHILA EQUIPADA</span>
+                                    <div class="separator-line"></div>
+                                </div>
+
+                                <div class="item-grid">
+                                    <div v-for="extraSlot in extraBackpackSlots" :key="'backpack-' + extraSlot"
+                                        class="item-slot" :data-slot="basePlayerSlots + extraSlot"
+                                        :class="{ 'invalid-slot-highlight': errorSlot === (basePlayerSlots + extraSlot), 'slot-dimmed': !matchesSearch(getItemInSlot((basePlayerSlots + extraSlot), 'player'), playerSearchQuery) }"
+                                        @dblclick="getItemInSlot((basePlayerSlots + extraSlot), 'player') && useItem(getItemInSlot((basePlayerSlots + extraSlot), 'player'))"
+                                        @mousedown="event => handleMouseDown(event, (basePlayerSlots + extraSlot), 'player')">
+
+                                        <template v-if="getItemInSlot((basePlayerSlots + extraSlot), 'player')">
+                                            <div class="item-slot-img"
+                                                v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot((basePlayerSlots + extraSlot), 'player')), html: true}">
+                                                <img :src="'images/' + getItemInSlot((basePlayerSlots + extraSlot), 'player').image"
+                                                    alt="" />
+                                            </div>
+                                            <div class="item-slot-amount">
+                                                <p>x{{ getItemInSlot((basePlayerSlots + extraSlot), 'player').amount }}
+                                                </p>
+                                            </div>
+                                            <div class="item-slot-durability"
+                                                v-if="getItemInSlot((basePlayerSlots + extraSlot), 'player').info && 'quality' in getItemInSlot((basePlayerSlots + extraSlot), 'player').info">
+                                                <div class="item-slot-durability-fill"
+                                                    :style="{ width: getDurabilityPercentage(getItemInSlot((basePlayerSlots + extraSlot), 'player')) + '%' }"
+                                                    :class="getDurabilityClass(getItemInSlot((basePlayerSlots + extraSlot), 'player'))">
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -469,8 +518,7 @@
                                     <iconify-icon icon="ri:shut-down-line" class="clothing-action-icon"></iconify-icon>
                                     <h3>Motor</h3>
                                 </div>
-                                <div class="interaction-card" v-if="canAccessVehicleAction('veh_radio')"
-                                    @click="doAction('veh_radio')">
+                                <div class="interaction-card" v-if="hasVehicleRadio" @click="abrirRadioInventario()">
                                     <iconify-icon icon="mdi:radio" class="clothing-action-icon"></iconify-icon>
                                     <h3>Radio</h3>
                                 </div>
@@ -481,7 +529,7 @@
                                 </div>
                                 <div class="interaction-card" v-if="canAccessVehicleAction('veh_drift')"
                                     @click="doAction('veh_drift')">
-                                    <iconify-icon icon="solar:wheel-angle-bold"
+                                    <iconify-icon icon="ph:steering-wheel-bold"
                                         class="clothing-action-icon"></iconify-icon>
                                     <h3>Drift</h3>
                                 </div>
@@ -612,7 +660,8 @@
                                     </div>
                                     <div class="setting-control">
                                         <label class="switch">
-                                            <input type="checkbox" checked>
+                                            <input type="checkbox" v-model="uiSoundsEnabled"
+                                                @change="saveSoundPreference">
                                             <span class="slider round"></span>
                                         </label>
                                     </div>
@@ -841,6 +890,19 @@
                     </div>
 
                     <div class="header-actions">
+                        <div class="weight-icon-btn expandable-search" :class="{ 'active': showOtherSearch }"
+                            @click="!showOtherSearch ? toggleOtherSearch() : null"
+                            v-tooltip.bottom="!showOtherSearch ? 'Buscar ítem' : ''">
+                            <div class="search-icon-fixed">
+                                <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
+                            </div>
+                            <input type="text" id="other-search-input" class="admin-search-input-integrated"
+                                v-model="otherSearchQuery" placeholder="Buscar..." autocomplete="off" />
+                            <div class="close-search-btn" @click.stop="toggleOtherSearch()">
+                                <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+                            </div>
+                        </div>
+
                         <div class="weight-icon-btn"
                             v-tooltip.bottom="'Peso: ' + (otherInventoryWeight / 1000).toFixed(1) + ' / ' + (otherInventoryMaxWeight / 1000).toFixed(1) + ' KG'">
                             <iconify-icon icon="mdi:weight"></iconify-icon>
@@ -856,6 +918,7 @@
                 <div class="inventory-grid">
                     <div class="item-grid">
                         <div v-for="slot in otherInventorySlots" :key="slot" class="item-slot" :data-slot="slot"
+                            :class="{ 'slot-dimmed': !matchesSearch(getItemInSlot(slot, 'other'), otherSearchQuery) }"
                             @mousedown="event => handleMouseDown(event, slot, 'other')" @dragover.prevent>
 
                             <template v-if="getItemInSlot(slot, 'other')">
@@ -923,21 +986,24 @@
             </div>
         </div>
 
-        <div class="notification-container" v-if="showNotification">
-            <div class="notification-slot">
-                <div class="notification-title">
-                    <p>{{ notificationType }}</p>
+        <div class="notification-container">
+            <transition-group name="slide-notif">
+                <div v-for="notif in itemNotifications" :key="notif.id" class="notification-slot" :class="'notif-' + notif.action">
+                    
+                    <div class="notif-left">
+                        <img :src="notif.image" alt="" />
+                    </div>
+                    
+                    <div class="notif-right">
+                        <div class="notif-top-row">
+                            <span class="notif-action-tag">{{ notif.translatedAction }}</span>
+                            <span class="notif-amount">x{{ notif.amount }}</span>
+                        </div>
+                        <div class="notif-item-name">{{ notif.text }}</div>
+                    </div>
+
                 </div>
-                <div class="item-slot-img">
-                    <img :src="notificationImage" alt="" />
-                </div>
-                <div class="item-slot-amount">
-                    <p>x{{ notificationAmount }}</p>
-                </div>
-                <div class="item-slot-label">
-                    <p>{{ notificationText }}</p>
-                </div>
-            </div>
+            </transition-group>
         </div>
 
         <div class="required-item-container" v-if="showRequiredItems">

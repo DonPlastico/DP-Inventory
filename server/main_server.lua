@@ -194,12 +194,10 @@ RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
     end
 
     if Drops[inventory] then
-        -- Solo el que la abrió legítimamente puede quitar el bloqueo
         if Drops[inventory].isOpen == src then
             Drops[inventory].isOpen = false
         end
 
-        -- Eliminamos la bolsa solo si nadie más la está usando y está vacía
         if not Drops[inventory].isOpen then
             local hasItems = false
             for _, _ in pairs(Drops[inventory].items) do
@@ -223,9 +221,17 @@ RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
     if not Inventories[inventory] then
         return
     end
+
+    -- 1. PRIMERO GUARDAMOS EN BASE DE DATOS (Anti-Pérdidas)
     Inventories[inventory].isOpen = false
     MySQL.prepare('INSERT INTO inventories (identifier, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?',
         {inventory, json.encode(Inventories[inventory].items), json.encode(Inventories[inventory].items)})
+
+    -- 2. DESPUÉS HACEMOS LA MATEMÁTICA DEL PESO 
+    -- (Si esto crashea, la línea de arriba ya ha salvado tus ítems)
+    if type(inventory) == "string" and string.find(inventory, "^bag_") then
+        TriggerEvent('DP-Inventory:server:UpdateBagWeight', src, inventory)
+    end
 end)
 
 RegisterNetEvent('DP-Inventory:server:useItem', function(item)
@@ -238,9 +244,10 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
     local itemInfo = QBCore.Shared.Items[itemData.name]
 
     if itemData.type == 'weapon' then
-        TriggerClientEvent('qb-weapons:client:UseWeapon', src, itemData,
-            itemData.info.quality and itemData.info.quality > 0)
-        TriggerClientEvent('DP-Inventory:client:ItemBox', src, itemInfo, 'use')
+        TriggerClientEvent('qb-weapons:client:UseWeapon', src, itemData, itemData.info.quality and itemData.info.quality > 0)
+        
+        -- Delegamos la comprobación visual al cliente para que sea instantánea
+        TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
     elseif itemData.name == 'id_card' then
         UseItem(itemData.name, src, itemData)
         TriggerClientEvent('DP-Inventory:client:ItemBox', source, itemInfo, 'use')
@@ -618,8 +625,8 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
             local toId = getIdentifier(toInventory, src)
 
             if toItem and fromItem.name == toItem.name then
-                if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'stacked item') then
-                    AddItem(toId, toItem.name, toAmount, toSlot, toItem.info, 'stacked item')
+                if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'stacked item', true) then
+                    AddItem(toId, toItem.name, toAmount, toSlot, toItem.info, 'stacked item', true)
 
                     if GetResourceState("DP-RealMoney") ~= 'missing' then
                         exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
@@ -627,8 +634,8 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                     end
                 end
             elseif not toItem and toAmount < fromAmount then
-                if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'split item') then
-                    AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'split item')
+                if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'split item', true) then
+                    AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'split item', true)
 
                     if GetResourceState("DP-RealMoney") ~= 'missing' then
                         exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
@@ -640,10 +647,10 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                     local fromItemAmount = fromItem.amount
                     local toItemAmount = toItem.amount
 
-                    if RemoveItem(fromId, fromItem.name, fromItemAmount, fromSlot, 'swapped item') and
-                        RemoveItem(toId, toItem.name, toItemAmount, toSlot, 'swapped item') then
-                        AddItem(toId, fromItem.name, fromItemAmount, toSlot, fromItem.info, 'swapped item')
-                        AddItem(fromId, toItem.name, toItemAmount, fromSlot, toItem.info, 'swapped item')
+                    if RemoveItem(fromId, fromItem.name, fromItemAmount, fromSlot, 'swapped item', true) and
+                        RemoveItem(toId, toItem.name, toItemAmount, toSlot, 'swapped item', true) then
+                        AddItem(toId, fromItem.name, fromItemAmount, toSlot, fromItem.info, 'swapped item', true)
+                        AddItem(fromId, toItem.name, toItemAmount, fromSlot, toItem.info, 'swapped item', true)
 
                         if GetResourceState("DP-RealMoney") ~= 'missing' then
                             exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, fromItemAmount, 'remove')
@@ -653,8 +660,8 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                         end
                     end
                 else
-                    if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'moved item') then
-                        AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'moved item')
+                    if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'moved item', true) then
+                        AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'moved item', true)
 
                         if GetResourceState("DP-RealMoney") ~= 'missing' then
                             exports['DP-RealMoney']:UpdateCash(fromId, fromItem.name, toAmount, 'remove')
@@ -663,6 +670,13 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                     end
                 end
             end
+        end
+
+        -- Comprobamos si el movimiento involucró el slot 101 del jugador
+        if (fromInventory == 'player' and fromSlot == 101) or (toInventory == 'player' and toSlot == 101) then
+            -- Pequeño Wait para asegurar que SetInventoryData terminó de guardar la DB
+            Wait(100)
+            CheckBackpackUnequip(src)
         end
     end)
 
@@ -778,4 +792,38 @@ RegisterNetEvent('DP-Inventory:server:SaveMovePref', function(status)
     local val = status and 1 or 0
     MySQL.Async.execute('UPDATE dp_preferences SET move_while_open = ? WHERE citizenid = ?',
         {val, Player.PlayerData.citizenid})
+end)
+
+-- Obtener preferencia de sonidos al cargar el personaje
+QBCore.Functions.CreateCallback('DP-Inventory:server:GetSoundPref', function(source, cb)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then
+        return cb(true)
+    end
+
+    MySQL.Async.fetchAll('SELECT ui_sounds FROM dp_preferences WHERE citizenid = ?', {Player.PlayerData.citizenid},
+        function(result)
+            if result[1] ~= nil then
+                cb(result[1].ui_sounds == 1) -- Devuelve true si es 1, false si es 0
+            else
+                -- Si no existe en la tabla, lo insertamos por defecto a 1 (true)
+                MySQL.Async.execute(
+                    'INSERT INTO dp_preferences (citizenid, ui_sounds) VALUES (?, 1) ON DUPLICATE KEY UPDATE ui_sounds=1',
+                    {Player.PlayerData.citizenid})
+                cb(true)
+            end
+        end)
+end)
+
+-- Guardar la preferencia cuando el jugador hace clic en el interruptor
+RegisterNetEvent('DP-Inventory:server:SaveSoundPref', function(status)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then
+        return
+    end
+
+    local val = status and 1 or 0
+    MySQL.Async.execute(
+        'INSERT INTO dp_preferences (citizenid, ui_sounds) VALUES (?, ?) ON DUPLICATE KEY UPDATE ui_sounds=?',
+        {Player.PlayerData.citizenid, val, val})
 end)

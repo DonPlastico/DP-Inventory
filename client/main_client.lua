@@ -33,6 +33,13 @@ RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetPosition', function(pos)
         inventoryPosition = pos
     end)
+
+    QBCore.Functions.TriggerCallback('DP-Inventory:server:GetSoundPref', function(pref)
+        SendNUIMessage({
+            action = 'setSoundPref',
+            status = pref
+        })
+    end)
 end)
 
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
@@ -59,6 +66,13 @@ AddEventHandler('onResourceStart', function(resourceName)
 
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetPosition', function(pos)
         inventoryPosition = pos
+    end)
+
+    QBCore.Functions.TriggerCallback('DP-Inventory:server:GetSoundPref', function(pref)
+        SendNUIMessage({
+            action = 'setSoundPref',
+            status = pref
+        })
     end)
 end)
 
@@ -250,13 +264,41 @@ RegisterNetEvent('DP-Inventory:client:updateInventory', function()
     })
 end)
 
-RegisterNetEvent('DP-Inventory:client:ItemBox', function(itemData, type, amount)
+local function ShowItemBox(itemData, type, amount)
     SendNUIMessage({
         action = 'itemBox',
         item = itemData,
         type = type,
         amount = amount
     })
+end
+
+-- Agrupamos todos los nombres posibles para que no se escape ninguna notificación
+RegisterNetEvent('DP-Inventory:client:ItemBox', ShowItemBox)
+
+-- Lógica inteligente para saber si equipamos o guardamos el arma
+RegisterNetEvent('DP-Inventory:client:WeaponItemBox', function(itemInfo)
+    local ped = PlayerPedId()
+    local currentWeapon = GetSelectedPedWeapon(ped)
+    local itemHash = joaat(itemInfo.name)
+
+    -- Nos aseguramos de sacar el hash exacto del arma desde la base de QBCore
+    if QBCore.Shared.Weapons then
+        for _, v in pairs(QBCore.Shared.Weapons) do
+            if v.name == itemInfo.name then
+                itemHash = v.hash or joaat(v.name)
+                break
+            end
+        end
+    end
+
+    -- Si el arma que tenemos en la mano es la misma que clickeamos -> La estamos guardando
+    if currentWeapon == itemHash then
+        ShowItemBox(itemInfo, 'equip', 1)
+    else
+        -- Si estamos desarmados o tenemos otra arma -> La estamos equipando
+        ShowItemBox(itemInfo, 'holster', 1)
+    end
 end)
 
 RegisterNetEvent('DP-Inventory:server:RobPlayer', function(TargetId)
@@ -303,11 +345,15 @@ RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
         end
     end
 
+    -- Obtenemos los slots y el peso dinámico calculados en backpack_cl.lua
+    local _, dynamicWeight = GetPlayerDynamicCapacity() -- Solo necesitamos el peso
+    local dynamicSlots = Config.MaxSlots -- Slots SIEMPRE base fijo
+
     SendNUIMessage({
         action = 'open',
         inventory = items,
-        slots = Config.MaxSlots,
-        maxweight = Config.MaxWeight,
+        slots = dynamicSlots, -- Reemplazado Config.MaxSlots
+        maxweight = dynamicWeight, -- Reemplazado Config.MaxWeight
         other = other,
         playerName = charName,
         isDriver = isDriver,
@@ -1191,13 +1237,24 @@ RegisterNUICallback('PerformAction', function(data, cb)
 
             -- SISTEMAS DE CONDUCCIÓN
         elseif action == 'veh_drift' then
-            QBCore.Functions.Notify("¡PROXIMAMENTE DISPONIBLE!", "primary")
+            local ped = PlayerPedId()
+            local veh = GetVehiclePedIsIn(ped, false)
+
+            -- Solo llamamos al drift si realmente estás en un coche y eres el conductor
+            if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped then
+                -- Llama a la función que ahora vive en DP-Utilitylib
+                exports['DP-Utilitylib']:ToggleDrift(veh)
+            else
+                QBCore.Functions.Notify("Debes estar conduciendo un vehículo.", "error", 3000)
+            end
 
         elseif action == 'veh_limitador' then
-            QBCore.Functions.Notify("¡PROXIMAMENTE DISPONIBLE!", "primary")
+            -- Llama al export de tu HUD
+            exports['DP-Hud']:ToggleLimiter()
 
         elseif action == 'veh_crucero' then
-            QBCore.Functions.Notify("¡PROXIMAMENTE DISPONIBLE!", "primary")
+            -- Llama al export de tu HUD
+            exports['DP-Hud']:ToggleCruise()
 
             -- ASIENTOS DINÁMICOS Y NORMALES
         elseif string.find(action, "veh_sit_") then
@@ -1371,7 +1428,18 @@ RegisterNUICallback('HolsterWeapon', function(data, cb)
             TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 1.0, 1000, 48, 0, false, false, false)
         end
 
-        QBCore.Functions.Notify('Arma guardada automáticamente', 'primary')
+        -- Extraemos los datos del arma y disparamos el aviso visual de GUARDADO
+        local weaponName = nil
+        for _, v in pairs(QBCore.Shared.Weapons) do
+            if v.hash == currentWeapon or joaat(v.name) == currentWeapon then
+                weaponName = v.name
+                break
+            end
+        end
+
+        if weaponName and QBCore.Shared.Items[weaponName] then
+            TriggerEvent('DP-Inventory:client:ItemBox', QBCore.Shared.Items[weaponName], 'holster', 1)
+        end
 
         if holsterTimer then
             Citizen.RemoveTimeout(holsterTimer)
@@ -1428,13 +1496,23 @@ RegisterNUICallback('SaveMovePreference', function(data, cb)
     cb('ok')
 end)
 
+RegisterNUICallback('SaveSoundPref', function(data, cb)
+    TriggerServerEvent('DP-Inventory:server:SaveSoundPref', data.status)
+    cb('ok')
+end)
+
 -- BUCLE PROTECTOR (Evita disparos/puñetazos accidentales y controla la cámara)
+local blockPauseMenuTimer = 0
+
 CreateThread(function()
     while true do
         local sleep = 500
+
         -- Si el inventario está abierto, escaneamos a 0ms sin excusas
         if isInventoryOpen then
             sleep = 0
+            blockPauseMenuTimer = GetGameTimer() + 400 -- Renovamos el bloqueo 400ms hacia el futuro
+
             if moveWhileOpen and not isTypingInUI then
                 DisableControlAction(0, 24, true) -- Bloquea Click Izquierdo (Ataque)
                 DisableControlAction(0, 257, true) -- Bloquea Ataque 2
@@ -1450,8 +1528,86 @@ CreateThread(function()
                 end
             end
         end
+
+        -- 🛡️ EL ESCUDO ANTI-PAUSE MENU (Activo durante y 400ms después de cerrar)
+        if GetGameTimer() < blockPauseMenuTimer then
+            sleep = 0
+            DisableControlAction(0, 200, true) -- ESC
+            DisableControlAction(0, 322, true) -- ESC Alternativo
+        end
+
         Wait(sleep)
     end
+end)
+
+-- ============================================
+-- 📻 INTEGRACIÓN CON DP-BOOMBOX_V2 (RADIO DE COCHES)
+-- ============================================
+
+-- 1. Vigilante en segundo plano: Detecta si el coche tiene radio al subirse
+CreateThread(function()
+    local inVehicle = false
+    while true do
+        Wait(1500) -- Revisa cada segundo y medio (No afecta al rendimiento)
+        local ped = PlayerPedId()
+
+        if IsPedInAnyVehicle(ped, false) then
+            if not inVehicle then
+                inVehicle = true
+                local veh = GetVehiclePedIsIn(ped, false)
+                local plate = GetVehicleNumberPlateText(veh)
+
+                if plate then
+                    -- Limpiamos espacios en blanco de la matrícula por seguridad
+                    plate = string.gsub(plate, "^%s*(.-)%s*$", "%1")
+
+                    -- Preguntamos a la base de datos a través del Boombox
+                    QBCore.Functions.TriggerCallback('DP-Boombox_v2:checkCarRadio', function(hasRadio)
+                        SendNUIMessage({
+                            action = "updateVehicleRadio",
+                            status = hasRadio
+                        })
+                    end, plate)
+                end
+            end
+        else
+            if inVehicle then
+                inVehicle = false
+                -- Al bajarse del coche, apagamos el botón del inventario por seguridad
+                SendNUIMessage({
+                    action = "updateVehicleRadio",
+                    status = false
+                })
+            end
+        end
+    end
+end)
+
+-- 2. Recibimos el clic del botón desde el JavaScript del inventario (Axios)
+RegisterNUICallback('abrirRadioDesdeInventario', function(data, cb)
+    -- 1. Cerramos el inventario
+    -- (Por lo general, estos eventos ocultan la UI y devuelven el control al jugador)
+    SetNuiFocus(false, false)
+    SendNUIMessage({
+        action = "close"
+    })
+    TriggerEvent('DP-Inventory:client:closeInv')
+
+    -- 2. Esperamos un pequeño instante para que la transición sea suave
+    Wait(250)
+
+    -- 3. ¡Ejecutamos el Export de tu Boombox para abrir la radio del coche!
+    exports['DP-Boombox_v2']:OpenCarRadio()
+
+    cb('ok')
+end)
+
+-- 3. Forzar actualización instantánea al instalar la radio (Recibe la orden del Boombox)
+RegisterNetEvent('DP-Inventory:client:UpdateVehicleRadio', function(status)
+    SendNUIMessage({
+        action = "updateVehicleRadio",
+        status = status
+    })
 end)
 
 -- ==========================================================================

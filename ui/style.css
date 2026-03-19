@@ -44,6 +44,33 @@
     --hotbar: rgba(255, 255, 255, 0.7);
     --hover-color: rgba(255, 255, 255, 0.2);
     --border-color: rgba(255, 255, 255, 0.1);
+
+    /* --- NOTIFICACIONES --- */
+    --notif-bg: rgba(0, 0, 0, 0.95);
+    /* Fondo negro opaco (contexto image_e0d624.png) */
+    --notif-border-default: rgba(255, 255, 255, 0.08);
+    /* Borde gris sutil */
+
+    /* --- Sombras/Glows Neutros (image_e0d624.png context) --- */
+    --notif-shadow-strong: rgba(255, 255, 255, 0.3);
+    /* Resplandor blanco para EQUIP/ADD */
+    --notif-shadow-default: rgba(255, 255, 255, 0.15);
+    /* Resplandor gris/blanco para USE/HOLSTER */
+    --notif-shadow-weak: rgba(100, 100, 100, 0.1);
+    /* Sombra ténue para REMOVE */
+
+    /* --- Fondos de Tags Neutros --- */
+    --notif-tag-bg-accent: #ffffff;
+    /* Para EQUIP/ADD */
+    --notif-tag-text-accent: #000000;
+
+    --notif-tag-bg-standard: rgba(255, 255, 255, 0.15);
+    /* Para USE/HOLSTER */
+    --notif-tag-text-standard: #ffffff;
+
+    --notif-tag-bg-dim: rgba(255, 255, 255, 0.05);
+    /* Para REMOVE */
+    --notif-tag-text-dim: rgba(255, 255, 255, 0.7);
 }
 
 html,
@@ -614,39 +641,124 @@ div {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
+/* ==========================================================
+   SISTEMA DE NOTIFICACIONES MONOCROMÁTICO UNIFICADO (COMPACTO)
+   ========================================================== */
+
 .notification-container {
     display: flex;
+    flex-direction: column;
     justify-content: center;
+    gap: 6px; /* Separación más ajustada */
     position: fixed;
-    bottom: 2vh;
-    left: 50%;
-    transform: translate(-50%);
+    /* Bajamos la posición (evita el chat) y pegamos a 5px de la izquierda */
+    top: 40%; 
+    left: 5px; 
+    z-index: 9999;
+    pointer-events: none;
 }
 
 .notification-slot {
+    display: flex; 
+    align-items: center; 
+    width: 230px; /* Más estrecho */
+    height: 45px; /* Altura súper reducida */
+    border-radius: 4px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    overflow: hidden;
     position: relative;
-    width: 10vh;
-    height: 10vh;
+    
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1); 
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5); 
+    
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* --- Columna Izquierda: Icono --- */
+.notif-left {
+    flex-shrink: 0; 
+    width: 30px; /* Foto mucho más pequeña */
+    height: 30px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
     justify-content: center;
-    background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+    align-items: center;
+    margin-right: 10px;
+    overflow: hidden;
 }
 
-.notification-title {
-    color: var(--primary-color);
-    align-self: flex-start;
-    margin-top: 5px;
-    margin-left: 5px;
+.notif-left img {
+    max-width: 100%;
+    max-height: 100%;
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3)); 
 }
 
-.notification-title p {
-    margin: 0;
-    padding: 0;
-    font-size: 0.7vh;
+/* --- Columna Derecha: Información --- */
+.notif-right {
+    flex-grow: 1; 
+    display: flex;
+    flex-direction: column; 
+    justify-content: center; /* Centramos el bloque de texto verticalmente */
+    gap: 3px; /* Espacio mínimo entre el tag y el nombre */
+    height: 100%;
+}
+
+/* Fila superior (Estado + Cantidad) */
+.notif-top-row {
+    display: flex;
+    justify-content: space-between; 
+    align-items: center;
+    line-height: 1;
+    width: 100%;
+}
+
+/* Etiqueta de acción (Estilo Unificado) */
+.notif-action-tag {
+    font-size: 8px; /* Letra ultra pequeña */
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    color: #ffffff; 
+    background: rgba(255, 255, 255, 0.08); 
+}
+
+/* Cantidad */
+.notif-amount {
+    font-size: 10px; /* Número más pequeño */
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.6); 
+}
+
+/* Nombre del Ítem */
+.notif-item-name {
+    font-size: 11px; /* Letra principal reducida */
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #ffffff; 
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis; 
+    white-space: nowrap;
+}
+
+/* --- Animaciones de Vue --- */
+.slide-notif-enter-active,
+.slide-notif-leave-active,
+.slide-notif-move {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-notif-enter-from {
+    opacity: 0;
+    transform: translateX(-50px);
+}
+
+.slide-notif-leave-to {
+    opacity: 0;
+    transform: translateX(-50px) scale(0.9);
 }
 
 .required-item-container {
@@ -2425,8 +2537,69 @@ input:checked+.slider:before {
     filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.2));
 }
 
+.item-slot.slot-dimmed {
+    background-color: rgba(5, 5, 5, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.02) !important;
+    opacity: 0.35;
+    filter: grayscale(80%) brightness(0.5);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none !important;
+}
 
+.item-slot.slot-dimmed:hover {
+    background-color: rgba(20, 20, 20, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    opacity: 0.6;
+    filter: grayscale(40%) brightness(0.7);
+    cursor: default;
+}
 
+.item-slot.slot-dimmed .item-slot-key {
+    color: rgba(255, 255, 255, 0.02);
+}
+
+.item-slot {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.player-inventory-section .expandable-search.active {
+    width: 110px !important;
+}
+
+.player-inventory-section .admin-search-input-integrated {
+    font-size: 1vh;
+}
+
+.backpack-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 15px 0 10px 0;
+    padding: 0 5px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.backpack-separator iconify-icon {
+    font-size: 2.2vh;
+    color: var(--primary);
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.1));
+}
+
+.backpack-separator span {
+    font-size: 1.1vh;
+    font-weight: 800;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+
+.backpack-separator .separator-line {
+    flex-grow: 1;
+    height: 1px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0.15), transparent);
+}
 
 
 

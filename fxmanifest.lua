@@ -16,14 +16,16 @@ client_scripts {
     'client/main_client.lua',
     'client/drops.lua',
     'client/vehicles.lua',
-    'client/backitems.lua'
+    'client/backitems.lua',
+    'client/backpack_cl.lua'
 }
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'server/main_server.lua',
     'server/functions.lua',
-    'server/commands.lua'
+    'server/commands.lua',
+    'server/backpack_sv.lua'
 }
 
 ui_page 'ui/index.html'
@@ -32,6 +34,7 @@ files {
     'ui/index.html',
     'ui/style.css',
     'ui/script.js',
+    'ui/sounds/*.mp3',
     'ui/images/**/*.png',
     'ui/images/*.png'
 }
