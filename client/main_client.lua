@@ -1,39 +1,96 @@
-QBCore = exports['qb-core']:GetCoreObject()
-PlayerData = nil
-local hotbarShown = false
-local inVendingZone = false
-local isInventoryOpen = false
-local currentAimStyle = joaat("Default")
-local isHolstering = false
-local holsterTimer = nil
-local isPlayerAdmin = false
-local isTransitioningAdmin = false
-local isCursorModeActive = false
-local isOtherInventoryOpen = false
-local inventoryOpenCoords = nil
-local moveWhileOpen = false
-local isTypingInUI = false
-local inventoryPosition = 'bottom' -- Default
+-- ============================================================
+--  DP-INVENTORY · client/main_client.lua
+--  Núcleo del cliente. Orquesta la apertura/cierre del inventario,
+--  la comunicación NUI↔Lua, los sistemas anti-exploit, el menú
+--  de acciones contextuales (PerformAction), el panel de admin
+--  y las integraciones con recursos externos.
+--
+--  ÍNDICE DE CONTENIDOS
+--  ─────────────────────────────────────────────────────────
+--  [1]  VARIABLES DE ESTADO GLOBALES Y LOCALES
+--  [2]  HANDLERS DE CICLO DE VIDA (carga/descarga/restart)
+--  [3]  FUNCIONES LOCALES Y GLOBALES
+--         · UpdateNuiFocus
+--         · LoadAnimDict
+--         · GetVehicleConfig
+--         · GetAttachmentSlotType
+--         · FormatWeaponAttachments
+--         · HasItem (cliente)
+--  [4]  EVENTOS DE RED – UI y Inventario
+--         · requiredItems, hotbar, closeInv, updateInventory
+--         · ShowItemBox / ItemBox / WeaponItemBox
+--         · RobPlayer, openInventory, giveAnim
+--  [5]  THREADS
+--         · Hilo 1 (500ms)  – Vehículos y animaciones de armas
+--         · Hilo 2 (1000ms) – Anti-exploit (distancia + arma fantasma)
+--         · Hilo 3 (dinámico) – Máquinas expendedoras
+--         · Hilo 4 (dinámico) – Bucle protector de input
+--         · Hilo 5 (1500ms) – Integración DP-Boombox (radio de coche)
+--  [6]  COMMANDS & KEYBINDS
+--  [7]  PANEL DE ADMINISTRACIÓN (DP-Menu)
+--  [8]  NUI CALLBACKS
+--         · PlayDropFail, AttemptPurchase, CloseInventory
+--         · toggleCursorMode, UseItem, SetInventoryData
+--         · GiveItem, GetNearbyPlayers, Notify
+--         · GetWeaponData, RemoveAttachment, AddAttachment
+--         · PerformAction (acciones ropa / personaje / armas / vehículo)
+--         · CloseSecondaryInventory, HolsterWeapon
+--         · GetAdminMasterData, ForceOpenAdmin
+--         · SaveInventoryPosition, SetTypingFocus, SaveMovePreference
+--         · SaveSoundPref, abrirRadioDesdeInventario
+--  [9]  EVENTOS DE INTEGRACIÓN EXTERNA (DP-Boombox)
+--  [10] EXPORTS PARA OTROS RECURSOS
+-- ============================================================
+-- ============================================================
+--  [1] VARIABLES DE ESTADO GLOBALES Y LOCALES
+-- ============================================================
+QBCore = exports['qb-core']:GetCoreObject() -- GLOBAL: accesible desde backpack_cl.lua y otros archivos
 
--- Handlers
+PlayerData = nil -- GLOBAL: espejo de los datos del jugador (QBCore.PlayerData).
+-- Actualizado por QBCore:Player:SetPlayerData en cada cambio de inventario/stats.
 
+local hotbarShown = false -- true si la hotbar está visible en la UI
+local inVendingZone = false -- true si el jugador está dentro del radio de una máquina expendedora
+local isInventoryOpen = false -- true si la UI del inventario está activa
+local currentAimStyle = joaat("Default") -- Hash del estilo de apuntado activo (Default / Gang1H / Hillbilly)
+local isHolstering = false -- true durante la animación de holster (anti-spam)
+local holsterTimer = nil -- Handle del timeout que resetea isHolstering tras 1 segundo
+local isPlayerAdmin = false -- true si el jugador tiene permisos de admin en DP-Inventory
+local isTransitioningAdmin = false -- true durante la transición de apertura del panel admin (evita cierre prematuro)
+local isCursorModeActive = false -- true si el modo cursor (tecla J) está activo (mueve cámara con el ratón)
+local isOtherInventoryOpen = false -- true si hay un inventario secundario abierto (maletero, stash, drop, etc.)
+local inventoryOpenCoords = nil -- Vector3 de donde estaba el jugador al abrir el inventario secundario (anti-exploit)
+local moveWhileOpen = false -- Preferencia del jugador: si puede moverse con el inventario abierto
+local isTypingInUI = false -- true si el jugador está escribiendo en un campo de texto de la UI
+local inventoryPosition = 'bottom' -- Posición visual del inventario: 'bottom' | 'top' | etc.
+
+-- ============================================================
+--  [2] HANDLERS DE CICLO DE VIDA
+-- ============================================================
+
+--- Al cargar el jugador: inicializa el estado del inventario, carga los drops
+--- y recupera las preferencias guardadas del jugador desde el servidor.
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
-    LocalPlayer.state:set('inv_busy', false, true)
+    LocalPlayer.state:set('inv_busy', false, true) -- Marcamos al jugador como disponible
     PlayerData = QBCore.Functions.GetPlayerData()
-    GetDrops()
+    GetDrops() -- Función de drops.lua: carga los drops activos del mundo
 
+    -- Comprobamos si el jugador es admin del inventario
     QBCore.Functions.TriggerCallback('DP-Inventory:server:IsAdmin', function(admin)
         isPlayerAdmin = admin
     end)
 
+    -- Preferencia: ¿puede moverse con el inventario abierto?
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetMovePref', function(pref)
         moveWhileOpen = pref
     end)
 
+    -- Preferencia: posición visual del inventario en pantalla
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetPosition', function(pos)
         inventoryPosition = pos
     end)
 
+    -- Preferencia: sonidos de inventario activados/desactivados
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetSoundPref', function(pref)
         SendNUIMessage({
             action = 'setSoundPref',
@@ -42,15 +99,20 @@ RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
     end)
 end)
 
+--- Al desloguear: bloqueamos el inventario y limpiamos PlayerData.
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
     LocalPlayer.state:set('inv_busy', true, true)
     PlayerData = nil
 end)
 
+--- Actualización continua de PlayerData: se dispara en cada cambio de inventario,
+--- stats o cualquier dato del jugador gestionado por QBCore.
 RegisterNetEvent('QBCore:Player:SetPlayerData', function(val)
     PlayerData = val
 end)
 
+--- Al reiniciar el recurso en caliente: recargamos PlayerData y las preferencias
+--- para que el jugador no pierda configuración sin reconectarse.
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName == GetCurrentResourceName() then
         PlayerData = QBCore.Functions.GetPlayerData()
@@ -76,10 +138,15 @@ AddEventHandler('onResourceStart', function(resourceName)
     end)
 end)
 
--- ==========================================================================
--- Functions
--- ==========================================================================
+-- ============================================================
+--  [3] FUNCIONES LOCALES Y GLOBALES
+-- ============================================================
 
+--- Actualiza el foco NUI y el modo de input según el estado del inventario.
+--- - Inventario abierto + moveWhileOpen + no escribiendo → SetNuiFocusKeepInput(true)
+---   (el jugador puede moverse WASD mientras la UI tiene el foco del ratón)
+--- - Cualquier otro caso → foco total en NUI o sin foco.
+--- Llamar esta función en lugar de SetNuiFocus directamente garantiza coherencia.
 local function UpdateNuiFocus()
     if isInventoryOpen then
         SetNuiFocus(true, true)
@@ -94,9 +161,13 @@ local function UpdateNuiFocus()
     end
 end
 
+--- Carga un diccionario de animaciones de forma bloqueante (espera hasta que esté listo).
+--- GLOBAL: usada desde vehicles.lua (OpenTrunk/CloseTrunk) y otros archivos.
+---
+--- @param dict  string  Nombre del diccionario de animaciones a cargar
 function LoadAnimDict(dict)
     if HasAnimDictLoaded(dict) then
-        return
+        return -- Ya estaba cargado, no hacemos nada
     end
     RequestAnimDict(dict)
     while not HasAnimDictLoaded(dict) do
@@ -104,6 +175,12 @@ function LoadAnimDict(dict)
     end
 end
 
+--- Escanea la configuración física de un vehículo y devuelve sus características.
+--- Se llama al abrir el inventario estando en un vehículo para enviar a la UI
+--- qué puertas/maletero/asientos existen y poder mostrar los controles correctos.
+---
+--- @param veh    number  Handle del vehículo
+--- @return       table|nil  {vehClass, seats, hasDoor{fl,fr,rl,rr,hood,trunk}} o nil si veh=0
 -- ESCÁNER FÍSICO DEL VEHÍCULO
 local function GetVehicleConfig(veh)
     if veh == 0 then
@@ -113,16 +190,22 @@ local function GetVehicleConfig(veh)
         vehClass = GetVehicleClass(veh),
         seats = GetVehicleModelNumberOfSeats(GetEntityModel(veh)),
         hasDoor = {
-            fl = DoesVehicleHaveDoor(veh, 0),
-            fr = DoesVehicleHaveDoor(veh, 1),
-            rl = DoesVehicleHaveDoor(veh, 2),
-            rr = DoesVehicleHaveDoor(veh, 3),
-            hood = DoesVehicleHaveDoor(veh, 4),
-            trunk = DoesVehicleHaveDoor(veh, 5)
+            fl = DoesVehicleHaveDoor(veh, 0), -- Frontal Izquierda (conductor)
+            fr = DoesVehicleHaveDoor(veh, 1), -- Frontal Derecha (copiloto)
+            rl = DoesVehicleHaveDoor(veh, 2), -- Trasera Izquierda
+            rr = DoesVehicleHaveDoor(veh, 3), -- Trasera Derecha
+            hood = DoesVehicleHaveDoor(veh, 4), -- Capó / Motor
+            trunk = DoesVehicleHaveDoor(veh, 5) -- Maletero
         }
     }
 end
 
+--- Traduce el tipo de accesorio de qb-weapons al tipo de slot del panel de armas de la UI.
+--- Los tipos de qb-weapons son strings largos (ej: 'suppressor_attachment');
+--- la UI de DP-Inventory usa tipos cortos (ej: 'suppressor').
+---
+--- @param attachmentType  string  Tipo de accesorio de qb-weapons
+--- @return                string  Tipo de slot para la UI ('suppressor'|'barrel'|'grip'|'flashlight'|'scope'|'clip'|'drum'|'camo')
 -- Mapea el attachmentType del config de qb-weapons al tipo de slot del panel WIP
 local function GetAttachmentSlotType(attachmentType)
     local t = attachmentType:lower()
@@ -145,9 +228,15 @@ local function GetAttachmentSlotType(attachmentType)
     elseif t:find('camo_attachment') or t == 'luxuryfinish_attachment' then
         return 'camo'
     end
-    return 'flashlight'
+    return 'flashlight' -- Fallback por defecto si el tipo no coincide con ningún caso
 end
 
+--- Formatea la lista de accesorios instalados en un arma al formato que consume la UI.
+--- Cruza los accesorios del `info` del ítem con la config de qb-weapons para obtener
+--- el tipo de slot y el label legible de cada accesorio.
+---
+--- @param itemdata  table  Datos completos del ítem arma (con itemdata.info.attachments)
+--- @return          table  Array de {attachment, label, slotType} listo para la UI
 local function FormatWeaponAttachments(itemdata)
     if not itemdata.info or not itemdata.info.attachments or #itemdata.info.attachments == 0 then
         return {}
@@ -177,6 +266,21 @@ local function FormatWeaponAttachments(itemdata)
     return attachments
 end
 
+--- Comprueba si el jugador local tiene uno o varios ítems en su inventario.
+--- Versión CLIENTE de HasItem: opera sobre `PlayerData.items` en lugar de llamar al servidor.
+--- Misma lógica que la versión servidor de functions.lua.
+---
+--- EXPORT: exports['DP-Inventory']:HasItem(items, amount)
+---
+--- Modos de uso:
+---   HasItem('water')               → ¿tiene al menos 1 water?
+---   HasItem('water', 3)            → ¿tiene al menos 3 water?
+---   HasItem({'water', 'bread'})    → ¿tiene al menos 1 de cada uno?
+---   HasItem({water=2, bread=1})    → ¿tiene 2 water Y 1 bread?
+---
+--- @param items   string|table  Nombre del ítem o tabla de ítems
+--- @param amount  number|nil    Cantidad mínima (solo para string)
+--- @return        boolean
 function HasItem(items, amount)
     local isTable = type(items) == 'table'
     local isArray = isTable and table.type(items) == 'array' or false
@@ -216,8 +320,15 @@ end
 
 exports('HasItem', HasItem)
 
--- Events
+-- ============================================================
+--  [4] EVENTOS DE RED – UI e Inventario
+-- ============================================================
 
+--- Muestra u oculta la lista de ítems requeridos para una acción en la UI.
+--- `bool=true` → muestra los ítems; `bool=false` → limpia la lista.
+---
+--- @param items  table    Lista de ítems requeridos (name, image)
+--- @param bool   boolean  true para mostrar, false para ocultar
 RegisterNetEvent('DP-Inventory:client:requiredItems', function(items, bool)
     local itemTable = {}
     if bool then
@@ -237,6 +348,8 @@ RegisterNetEvent('DP-Inventory:client:requiredItems', function(items, bool)
     })
 end)
 
+--- Alterna la visibilidad de la hotbar y envía los ítems actuales a la UI.
+--- El estado `hotbarShown` se invierte en cada llamada.
 RegisterNetEvent('DP-Inventory:client:hotbar', function(items)
     hotbarShown = not hotbarShown
     SendNUIMessage({
@@ -246,12 +359,15 @@ RegisterNetEvent('DP-Inventory:client:hotbar', function(items)
     })
 end)
 
+--- Cierra la UI del inventario desde el servidor (sin pasar por el NUI callback).
 RegisterNetEvent('DP-Inventory:client:closeInv', function()
     SendNUIMessage({
         action = 'close'
     })
 end)
 
+--- Fuerza una actualización de los ítems mostrados en la UI sin cerrar/abrir el inventario.
+--- Se usa tras un ClearInventory, drop de ítems, etc.
 RegisterNetEvent('DP-Inventory:client:updateInventory', function()
     local items = {}
     if PlayerData and type(PlayerData.items) == "table" then
@@ -264,6 +380,12 @@ RegisterNetEvent('DP-Inventory:client:updateInventory', function()
     })
 end)
 
+--- Muestra el aviso visual de ítem (añadido/eliminado/equipado/guardado) en la UI.
+--- Función local reutilizada por varios eventos de red.
+---
+--- @param itemData  table   Datos del ítem (label, image, etc.)
+--- @param type      string  Tipo de acción: 'add' | 'remove' | 'equip' | 'holster'
+--- @param amount    number  Cantidad del ítem afectada
 local function ShowItemBox(itemData, type, amount)
     SendNUIMessage({
         action = 'itemBox',
@@ -273,16 +395,19 @@ local function ShowItemBox(itemData, type, amount)
     })
 end
 
--- Agrupamos todos los nombres posibles para que no se escape ninguna notificación
+-- Alias de red para ShowItemBox (permite llamarlo desde el servidor o desde otros eventos cliente)
 RegisterNetEvent('DP-Inventory:client:ItemBox', ShowItemBox)
 
--- Lógica inteligente para saber si equipamos o guardamos el arma
+--- Decide inteligentemente si mostrar el aviso como 'equipar' o 'guardar' según si
+--- el arma clickeada es la que ya tenemos en la mano.
+--- - Arma en mano == arma clickeada  → la estamos GUARDANDO ('holster')
+--- - Desarmado o arma diferente      → la estamos EQUIPANDO ('equip')
 RegisterNetEvent('DP-Inventory:client:WeaponItemBox', function(itemInfo)
     local ped = PlayerPedId()
     local currentWeapon = GetSelectedPedWeapon(ped)
     local itemHash = joaat(itemInfo.name)
 
-    -- Nos aseguramos de sacar el hash exacto del arma desde la base de QBCore
+    -- Buscamos el hash exacto del arma en el catálogo de QBCore (más fiable que joaat directo)
     if QBCore.Shared.Weapons then
         for _, v in pairs(QBCore.Shared.Weapons) do
             if v.name == itemInfo.name then
@@ -292,15 +417,14 @@ RegisterNetEvent('DP-Inventory:client:WeaponItemBox', function(itemInfo)
         end
     end
 
-    -- Si el arma que tenemos en la mano es la misma que clickeamos -> La estamos guardando
     if currentWeapon == itemHash then
-        ShowItemBox(itemInfo, 'equip', 1)
+        ShowItemBox(itemInfo, 'equip', 1) -- Arma en mano → la guardamos
     else
-        -- Si estamos desarmados o tenemos otra arma -> La estamos equipando
-        ShowItemBox(itemInfo, 'holster', 1)
+        ShowItemBox(itemInfo, 'holster', 1) -- Desarmado o diferente → la equipamos
     end
 end)
 
+--- Inicia el flujo de robo de dinero a otro jugador enviando su ID a la UI.
 RegisterNetEvent('DP-Inventory:server:RobPlayer', function(TargetId)
     SendNUIMessage({
         action = 'RobMoney',
@@ -308,11 +432,16 @@ RegisterNetEvent('DP-Inventory:server:RobPlayer', function(TargetId)
     })
 end)
 
+--- Abre la UI del inventario con todos los datos necesarios para el render inicial.
+--- Reúne: ítems, capacidad dinámica (mochila), datos de vehículo, preferencias y permisos.
+---
+--- @param items  table       Inventario del jugador (PlayerData.items)
+--- @param other  table|nil   Inventario secundario (maletero, stash, drop...) o nil si solo bolsillos
 RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
     isInventoryOpen = true
     UpdateNuiFocus()
 
-    -- Guardamos si hay un inventario secundario y las coordenadas exactas donde se abrió
+    -- Si hay inventario secundario, guardamos las coordenadas actuales para el anti-exploit de distancia
     if other then
         isOtherInventoryOpen = true
         inventoryOpenCoords = GetEntityCoords(PlayerPedId())
@@ -320,12 +449,13 @@ RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
         isOtherInventoryOpen = false
     end
 
+    -- Nombre del personaje para mostrar en el panel del inventario
     local charName = "INVENTARIO"
     if PlayerData and PlayerData.charinfo then
         charName = PlayerData.charinfo.firstname .. ' ' .. PlayerData.charinfo.lastname
     end
 
-    -- COMPROBACIÓN DE VEHÍCULO Y ASIENTOS
+    -- Detección del asiento del jugador en el vehículo (para controles de guantera/asientos)
     local ped = PlayerPedId()
     local isDriver = false
     local inVeh = false
@@ -336,24 +466,24 @@ RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
     if veh ~= 0 then
         inVeh = true
         isDriver = true
-        vehData = GetVehicleConfig(veh) -- ¡Escaneamos el coche al abrir!
+        vehData = GetVehicleConfig(veh) -- Escaneamos puertas/asientos del vehículo
         for i = -1, 2 do
             if GetPedInVehicleSeat(veh, i) == ped then
-                mySeat = i
+                mySeat = i -- -1=conductor, 0=copiloto, 1=TI, 2=TD
                 break
             end
         end
     end
 
-    -- Obtenemos los slots y el peso dinámico calculados en backpack_cl.lua
-    local _, dynamicWeight = GetPlayerDynamicCapacity() -- Solo necesitamos el peso
-    local dynamicSlots = Config.MaxSlots -- Slots SIEMPRE base fijo
+    -- Capacidad dinámica: peso puede aumentar si hay mochila expansora en slot 101
+    local _, dynamicWeight = GetPlayerDynamicCapacity() -- De backpack_cl.lua
+    local dynamicSlots = Config.MaxSlots -- Slots siempre base fijo
 
     SendNUIMessage({
         action = 'open',
         inventory = items,
-        slots = dynamicSlots, -- Reemplazado Config.MaxSlots
-        maxweight = dynamicWeight, -- Reemplazado Config.MaxWeight
+        slots = dynamicSlots,
+        maxweight = dynamicWeight,
         other = other,
         playerName = charName,
         isDriver = isDriver,
@@ -366,6 +496,8 @@ RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
     })
 end)
 
+--- Reproduce la animación de dar/recibir un ítem a otro jugador.
+--- No se reproduce si el jugador está en un vehículo.
 RegisterNetEvent('DP-Inventory:client:giveAnim', function()
     if IsPedInAnyVehicle(PlayerPedId(), false) then
         return
@@ -374,12 +506,23 @@ RegisterNetEvent('DP-Inventory:client:giveAnim', function()
     TaskPlayAnim(PlayerPedId(), 'mp_common', 'givetake1_b', 8.0, 1.0, -1, 16, 0, false, false, false)
 end)
 
+-- ============================================================
+--  [5] THREADS
+-- ============================================================
+
 -- ==========================================================================
--- HILO 1: COMPROBACIONES MEDIAS (500ms) - Vehículos y Animaciones de Armas
+-- HILO 1: COMPROBACIONES MEDIAS (500ms) – Vehículos y Animaciones de Armas
+-- Responsabilidades:
+--   1. Vigilante del vehículo: actualiza la UI si el jugador cambia de asiento
+--      o se baja del coche con el inventario abierto.
+--   2. Guardián de animaciones (propio): aplica el estilo de apuntado correcto
+--      tras 1.5s de haber equipado el arma (evita conflictos con animaciones de equip).
+--   3. Guardián de animaciones (otros): sincroniza el estilo de apuntado de otros
+--      jugadores usando su state bag (aimStyle).
 -- ==========================================================================
-local appliedAimStyles = {}
-local lastWeapons = {}
-local equipTimers = {}
+local appliedAimStyles = {} -- Cache: player → stateKey de la animación ya aplicada
+local lastWeapons = {} -- Cache: player → hash del arma en el frame anterior
+local equipTimers = {} -- Cache: player → timestamp en que cambió de arma
 
 CreateThread(function()
     while true do
@@ -387,7 +530,8 @@ CreateThread(function()
         local myPed = PlayerPedId()
         local myId = PlayerId()
 
-        -- 1. VIGILANTE DEL VEHÍCULO (Cierra la guantera/esconde menú coche si te bajas, actualiza asiento en tiempo real)
+        -- 1. VIGILANTE DEL VEHÍCULO
+        -- Actualiza en tiempo real el asiento y configuración del vehículo en la UI
         if isInventoryOpen then
             local inVehicle = IsPedInAnyVehicle(myPed, false)
             local currentVeh = GetVehiclePedIsIn(myPed, false)
@@ -410,6 +554,7 @@ CreateThread(function()
                     vehData = vData
                 })
             else
+                -- Se bajó del vehículo → notificamos a la UI para ocultar controles de coche
                 SendNUIMessage({
                     action = 'checkVehicleState',
                     inVehicle = false,
@@ -420,18 +565,20 @@ CreateThread(function()
             end
         end
 
-        -- 2. GUARDIÁN DE ANIMACIONES DE ARMAS (TU PED)
+        -- 2. GUARDIÁN DE ANIMACIONES (JUGADOR PROPIO)
+        -- Detecta cambio de arma y aplica el estilo de apuntado tras 1.5s de estabilidad
         local currentWeapon = GetSelectedPedWeapon(myPed)
         if lastWeapons[myId] ~= currentWeapon then
             lastWeapons[myId] = currentWeapon
             equipTimers[myId] = GetGameTimer()
-            appliedAimStyles[myId] = nil
+            appliedAimStyles[myId] = nil -- Invalidamos el cache para forzar re-aplicación
         end
 
         if currentWeapon ~= joaat('WEAPON_UNARMED') and currentWeapon ~= 0 then
             local stateKey = tostring(currentAimStyle) .. "_" .. tostring(currentWeapon)
 
             if appliedAimStyles[myId] ~= stateKey then
+                -- Solo aplicamos si han pasado 1.5s desde el cambio de arma (anti-conflicto)
                 if GetGameTimer() - (equipTimers[myId] or 0) > 1500 then
                     SetWeaponAnimationOverride(myPed, currentAimStyle)
                     appliedAimStyles[myId] = stateKey
@@ -440,6 +587,7 @@ CreateThread(function()
         end
 
         -- 3. GUARDIÁN DE ANIMACIONES (OTROS JUGADORES EN RED)
+        -- Lee el state bag 'aimStyle' de cada jugador y aplica su animación en local
         for _, player in ipairs(GetActivePlayers()) do
             if player ~= myId then
                 local targetPed = GetPlayerPed(player)
@@ -475,37 +623,43 @@ CreateThread(function()
 end)
 
 -- ==========================================================================
--- HILO 2: COMPROBACIONES LENTAS (1000ms) - Sistemas Anti-Trampas
+-- HILO 2: COMPROBACIONES LENTAS (1000ms) – Sistemas Anti-Exploit
+-- Responsabilidades:
+--   1. Anti-exploit de distancia: cierra el inventario secundario si el jugador
+--      se aleja más de 4m del punto donde lo abrió.
+--   2. Anti-arma fantasma: detecta si el jugador tiene equipada un arma que ya
+--      no está en su inventario (dupes visuales/combate) y se la retira.
 -- ==========================================================================
 CreateThread(function()
     while true do
         Wait(1000)
         local ped = PlayerPedId()
 
-        -- 1. ANTI-EXPLOIT: Distancia del Inventario Secundario (Maleteros/Suelos)
+        -- 1. ANTI-EXPLOIT: Distancia del Inventario Secundario (Maleteros/Drops/Stashes)
         if isInventoryOpen and isOtherInventoryOpen and inventoryOpenCoords then
             if not IsPedInAnyVehicle(ped, false) then
                 local currentCoords = GetEntityCoords(ped)
                 local dist = #(currentCoords - inventoryOpenCoords)
 
                 if dist > 4.0 then
-                    -- Si te alejas de un coche, forzamos el cierre físico del maletero
+                    -- Si hay un vehículo cerca, cerramos su maletero también
                     local vehicle = QBCore.Functions.GetClosestVehicle()
                     if vehicle ~= 0 and #(currentCoords - GetEntityCoords(vehicle)) < 10.0 then
                         SetVehicleDoorShut(vehicle, 5, false) -- Cierra el maletero (puerta 5)
                     end
 
                     SendNUIMessage({
-                        action = 'forceCloseOther'
+                        action = 'forceCloseOther' -- Fuerza el cierre del panel secundario en la UI
                     })
                     isOtherInventoryOpen = false
-                    ClearPedTasks(ped) -- Detiene la animación de rebuscar al alejarte
+                    ClearPedTasks(ped) -- Cancela animación de rebuscar al alejarse
                     QBCore.Functions.Notify("Te has alejado demasiado del objetivo.", "error")
                 end
             end
         end
 
-        -- 2. ANTI-EXPLOIT: Arma Fantasma (Dupeo Visual/Combate)
+        -- 2. ANTI-EXPLOIT: Arma Fantasma (Dupe Visual/Combate)
+        -- Si el jugador tiene un arma en mano que ya no existe en su inventario, se la quitamos
         local currentWeaponHash = GetSelectedPedWeapon(ped)
         if currentWeaponHash ~= joaat('WEAPON_UNARMED') and currentWeaponHash ~= 0 then
             local hasWeaponItem = false
@@ -525,6 +679,7 @@ CreateThread(function()
                     hasWeaponItem = true
                 end
             else
+                -- Arma desconocida (no está en QBCore.Shared.Weapons) → la dejamos pasar
                 hasWeaponItem = true
             end
 
@@ -538,9 +693,13 @@ CreateThread(function()
 end)
 
 -- ==========================================================================
--- HILO 3: DINÁMICO (1000ms -> 0ms) - Máquinas Expendedoras (Vending)
+-- HILO 3: DINÁMICO (1000ms → 0ms) – Máquinas Expendedoras (Vending)
+-- Escanea los objetos de tipo expendedora dentro de 2.5m.
+-- Al detectar una, pasa a 0ms para capturar la tecla E.
+-- Al pulsar E, envía el evento al servidor para abrir la tienda.
 -- ==========================================================================
 CreateThread(function()
+    -- Pre-hasheamos los modelos de la config para comparaciones O(1)
     local vendingHashes = {}
     for _, modelStr in ipairs(Config.VendingObjects) do
         table.insert(vendingHashes, joaat(modelStr))
@@ -556,6 +715,7 @@ CreateThread(function()
         local nearestVendingObject = nil
         local closestDistance = 2.5
 
+        -- Solo buscamos si el inventario NO está ocupado
         if not LocalPlayer.state.inv_busy then
             for _, hash in ipairs(vendingHashes) do
                 local object = GetClosestObjectOfType(playerCoords.x, playerCoords.y, playerCoords.z, 2.5, hash, false,
@@ -565,6 +725,7 @@ CreateThread(function()
                     local objCoords = GetEntityCoords(object)
                     local distance = #(playerCoords - objCoords)
 
+                    -- Guardamos solo la más cercana
                     if distance < closestDistance then
                         closestDistance = distance
                         nearestVendingObject = object
@@ -576,7 +737,7 @@ CreateThread(function()
         end
 
         if isNearVending then
-            waitTime = 0
+            waitTime = 0 -- Modo reactivo
             if not inVendingZone then
                 exports['DP-TextUI']:MostrarUI('vending_usar', Lang:t('menu.vending') or 'Usar Máquina', 'E', false)
                 inVendingZone = true
@@ -586,12 +747,13 @@ CreateThread(function()
                 exports['DP-TextUI']:OcultarUI('vending_usar')
                 inVendingZone = false
 
+                -- Enviamos al servidor la entidad y coordenadas de la máquina para que abra la tienda
                 TriggerServerEvent('DP-Inventory:server:openVending', {
                     entity = nearestVendingObject,
                     coords = nearestVendingCoords
                 })
 
-                Wait(1000)
+                Wait(1000) -- Cooldown de 1s para evitar doble apertura por spam de E
             end
         elseif inVendingZone and not isNearVending then
             exports['DP-TextUI']:OcultarUI('vending_usar')
@@ -603,9 +765,116 @@ CreateThread(function()
 end)
 
 -- ==========================================================================
--- COMMANDS & KEYBINDS
+-- HILO 4: BUCLE PROTECTOR DE INPUT
+-- Evita disparos accidentales, puñetazos y apertura del menú de pausa
+-- mientras el inventario está abierto o recién cerrado.
+--
+-- Controls bloqueados con inventario abierto + moveWhileOpen:
+--   24  → Click izquierdo (Ataque)
+--   257 → Ataque 2
+--   25  → Click derecho (Apuntar)
+--   263 → Cuerpo a cuerpo
+--   37  → Rueda de armas (TAB)
+--   1   → Mover cámara Izq/Der (solo si no hay modo cursor)
+--   2   → Mover cámara Arr/Aba (solo si no hay modo cursor)
+--
+-- Escudo anti-pause menu (activo 400ms después de cerrar):
+--   200 → ESC
+--   322 → ESC alternativo
+-- ==========================================================================
+local blockPauseMenuTimer = 0
+
+CreateThread(function()
+    while true do
+        local sleep = 500
+
+        if isInventoryOpen then
+            sleep = 0
+            -- Renovamos el escudo anti-ESC 400ms hacia el futuro en cada frame
+            blockPauseMenuTimer = GetGameTimer() + 400
+
+            if moveWhileOpen and not isTypingInUI then
+                DisableControlAction(0, 24, true) -- Click Izquierdo (Ataque)
+                DisableControlAction(0, 257, true) -- Ataque 2
+                DisableControlAction(0, 25, true) -- Click Derecho (Apuntar)
+                DisableControlAction(0, 263, true) -- Cuerpo a cuerpo
+                DisableControlAction(0, 37, true) -- Rueda de armas (TAB)
+                DisablePlayerFiring(PlayerPedId(), true)
+
+                -- Solo bloqueamos la cámara si el modo cursor (J) NO está activo
+                if not isCursorModeActive then
+                    DisableControlAction(0, 1, true) -- Mover cámara Izq/Der
+                    DisableControlAction(0, 2, true) -- Mover cámara Arr/Aba
+                end
+            end
+        end
+
+        -- Escudo anti-pause: activo durante y 400ms después de cerrar el inventario
+        if GetGameTimer() < blockPauseMenuTimer then
+            sleep = 0
+            DisableControlAction(0, 200, true) -- ESC
+            DisableControlAction(0, 322, true) -- ESC alternativo
+        end
+
+        Wait(sleep)
+    end
+end)
+
+-- ==========================================================================
+-- HILO 5: INTEGRACIÓN DP-BOOMBOX (Radio de coche) – 1500ms
+-- Detecta cuando el jugador sube/baja de un vehículo y comprueba
+-- si ese vehículo tiene radio instalada (via callback del Boombox).
+-- Notifica a la UI para mostrar/ocultar el botón de radio en el inventario.
 -- ==========================================================================
 
+-- ============================================
+-- 📻 INTEGRACIÓN CON DP-BOOMBOX_V2 (RADIO DE COCHES)
+-- ============================================
+
+-- 1. Vigilante en segundo plano: detecta si el coche tiene radio al subirse
+CreateThread(function()
+    local inVehicle = false
+    while true do
+        Wait(1500) -- Revisión cada 1.5s (bajo impacto en rendimiento)
+        local ped = PlayerPedId()
+
+        if IsPedInAnyVehicle(ped, false) then
+            if not inVehicle then
+                inVehicle = true
+                local veh = GetVehiclePedIsIn(ped, false)
+                local plate = GetVehicleNumberPlateText(veh)
+
+                if plate then
+                    -- Limpiamos espacios en blanco de la matrícula por seguridad
+                    plate = string.gsub(plate, "^%s*(.-)%s*$", "%1")
+
+                    -- Consultamos al Boombox si este vehículo tiene radio instalada
+                    QBCore.Functions.TriggerCallback('DP-Boombox_v2:checkCarRadio', function(hasRadio)
+                        SendNUIMessage({
+                            action = "updateVehicleRadio",
+                            status = hasRadio
+                        })
+                    end, plate)
+                end
+            end
+        else
+            if inVehicle then
+                inVehicle = false
+                -- Al bajarse del vehículo: ocultamos el botón de radio en la UI
+                SendNUIMessage({
+                    action = "updateVehicleRadio",
+                    status = false
+                })
+            end
+        end
+    end
+end)
+
+-- ============================================================
+--  [6] COMMANDS & KEYBINDS
+-- ============================================================
+
+--- Abre el inventario si la NUI y el menú de pausa no están activos.
 RegisterCommand('openInv', function()
     if IsNuiFocused() or IsPauseMenuActive() then
         return
@@ -613,10 +882,13 @@ RegisterCommand('openInv', function()
     ExecuteCommand('inventory')
 end, false)
 
+--- Alterna la visibilidad de la hotbar.
 RegisterCommand('toggleHotbar', function()
     ExecuteCommand('hotbar')
 end, false)
 
+--- Slots de hotbar (1–5): usa directamente el ítem del slot correspondiente.
+--- Bloquea el uso si el jugador lleva una bolsa de drop en la mano y el ítem es un arma.
 for i = 1, 5 do
     RegisterCommand('slot_' .. i, function()
         local itemData = PlayerData.items[i]
@@ -625,6 +897,7 @@ for i = 1, 5 do
         end
         if itemData.type == "weapon" then
             if HoldingDrop then
+                -- No se puede sacar un arma si llevas una bolsa en la mano
                 return QBCore.Functions.Notify("Ya tienes una bolsa en la mano, ¡ve y déjala!", "error", 5500)
             end
         end
@@ -640,11 +913,19 @@ end
 RegisterKeyMapping('openInv', Lang:t('inf_mapping.opn_inv'), 'keyboard', Config.Keybinds.Open)
 RegisterKeyMapping('toggleHotbar', Lang:t('inf_mapping.tog_slots'), 'keyboard', Config.Keybinds.Hotbar)
 
+-- ============================================================
+--  [7] PANEL DE ADMINISTRACIÓN (DP-Menu)
+--  Sistema de menús para que los admins inspeccionen cualquier
+--  inventario del servidor sin estar físicamente cerca.
+-- ============================================================
+
 -- ==========================================================================
 -- MENÚ ADMIN: GESTIÓN MAESTRA DE INVENTARIOS (DP-MENU)
 -- ==========================================================================
-local cachedInventoryData = {}
+local cachedInventoryData = {} -- Cache local con los datos del panel admin (jugadores, stashes, etc.)
 
+--- Recibe del servidor la lista de todos los inventarios y abre el menú principal de admin.
+--- Cachea los datos para que los submenús no necesiten otra consulta al servidor.
 RegisterNetEvent('DP-Inventory:client:OpenMasterMenu', function(players, trunks, gloveboxes, stashes)
     cachedInventoryData = {
         players = players,
@@ -655,6 +936,8 @@ RegisterNetEvent('DP-Inventory:client:OpenMasterMenu', function(players, trunks,
     TriggerEvent('DP-Inventory:client:ReturnToMasterMenu')
 end)
 
+--- Construye y abre el menú raíz del panel de administración usando DP-Menu.
+--- Muestra el conteo de cada categoría para orientar al admin de un vistazo.
 RegisterNetEvent('DP-Inventory:client:ReturnToMasterMenu', function()
     local menuElements = {{
         header = "PANEL DE ADMINISTRACIÓN",
@@ -711,6 +994,8 @@ RegisterNetEvent('DP-Inventory:client:ReturnToMasterMenu', function()
     exports["DP-Menu"]:openMenu(menuElements)
 end)
 
+--- Construye el submenú de una categoría (jugadores / stashes / maleteros / guanteras).
+--- Cada entrada del menú dispara ForceOpenInventory o ForceOpenStash según el tipo.
 RegisterNetEvent('DP-Inventory:client:OpenSubMenu', function(data)
     local menuElements = {}
     local itemsToLoad = cachedInventoryData[data.type] or {}
@@ -751,6 +1036,7 @@ RegisterNetEvent('DP-Inventory:client:OpenSubMenu', function(data)
     else
         for _, item in ipairs(itemsToLoad) do
             if data.type == "players" then
+                -- Entrada de jugador: muestra ID, nombre y Steam
                 menuElements[#menuElements + 1] = {
                     header = "[" .. item.id .. "] " .. item.name,
                     txt = "Steam: " .. item.steam,
@@ -764,6 +1050,7 @@ RegisterNetEvent('DP-Inventory:client:OpenSubMenu', function(data)
                     }
                 }
             else
+                -- Entrada de stash/maletero/guantera: muestra el identificador
                 menuElements[#menuElements + 1] = {
                     header = item,
                     icon = headerInfo.icon,
@@ -789,31 +1076,43 @@ RegisterNetEvent('DP-Inventory:client:OpenSubMenu', function(data)
     exports["DP-Menu"]:openMenu(menuElements)
 end)
 
+--- Abre un stash específico desde el panel de admin (sin necesidad de proximidad).
 RegisterNetEvent('DP-Inventory:client:ForceOpenStash', function(data)
     TriggerServerEvent("DP-Inventory:server:ForceOpenStash", data.identifier)
     QBCore.Functions.Notify("Abriendo: " .. data.identifier, "primary", 2500)
 end)
 
+--- Abre el inventario de otro jugador desde el panel de admin.
 RegisterNetEvent('DP-Inventory:client:ForceOpenInventory', function(data)
     TriggerServerEvent("DP-Inventory:server:OpenInventory", "otherplayer", data.targetId)
     QBCore.Functions.Notify("Inspeccionando a " .. data.targetName, "primary", 2500)
 end)
 
--- ==========================================================================
--- NUI CALLBACKS
--- ==========================================================================
+-- ============================================================
+--  [8] NUI CALLBACKS
+-- ============================================================
 
+--- Reproduce el sonido de error al intentar dejar caer un ítem en un slot inválido.
 RegisterNUICallback('PlayDropFail', function(_, cb)
     PlaySound(-1, 'Place_Prop_Fail', 'DLC_Dmod_Prop_Editor_Sounds', 0, 0, 1)
     cb('ok')
 end)
 
+--- Intenta realizar una compra en una tienda. Delega la lógica de dinero al servidor.
+---
+--- @param data  table  Datos de la compra (ítem, cantidad, precio, etc.)
+--- @param cb    function  Callback NUI: cb(true/false) según si la compra fue exitosa
 RegisterNUICallback('AttemptPurchase', function(data, cb)
     QBCore.Functions.TriggerCallback('DP-Inventory:server:attemptPurchase', function(canPurchase)
         cb(canPurchase)
     end, data)
 end)
 
+--- Cierra el inventario desde la UI. Gestiona:
+---   · Ignorar el cierre si hay una transición de admin en curso
+---   · Cerrar físicamente el maletero si el inventario era un 'trunk-'
+---   · Liberar el lock del inventario secundario (stash, drop) en el servidor
+---   · Resetear todos los flags de estado del cliente
 RegisterNUICallback('CloseInventory', function(data, cb)
     if isTransitioningAdmin then
         cb('ok')
@@ -822,36 +1121,42 @@ RegisterNUICallback('CloseInventory', function(data, cb)
 
     isCursorModeActive = false
     SetNuiFocusKeepInput(false)
-
     SetNuiFocus(false, false)
     isInventoryOpen = false
     isOtherInventoryOpen = false
 
     if data.name then
         if data.name:find('trunk-') then
-            CloseTrunk()
+            CloseTrunk() -- Cierra la puerta del maletero físicamente (de vehicles.lua)
         end
         TriggerServerEvent('DP-Inventory:server:closeInventory', data.name)
     elseif CurrentDrop then
+        -- Si se cerró un drop, liberamos su lock en el servidor
         TriggerServerEvent('DP-Inventory:server:closeInventory', CurrentDrop)
         CurrentDrop = nil
     end
     cb('ok')
 end)
 
+--- Alterna el modo cursor (tecla J): permite mover el ratón libremente por la UI
+--- sin controlar la cámara del juego. Útil para UI con elementos en toda la pantalla.
 RegisterNUICallback('toggleCursorMode', function(data, cb)
     isCursorModeActive = not isCursorModeActive
 
     if isCursorModeActive then
+        -- Modo cursor: foco NUI pero SIN capturar el ratón (keepInput=true → WASD libre)
         SetNuiFocus(true, false)
         SetNuiFocusKeepInput(true)
     else
+        -- Modo normal: foco NUI capturando el ratón
         SetNuiFocus(true, true)
         SetNuiFocusKeepInput(false)
     end
     cb('ok')
 end)
 
+--- Usa un ítem desde la UI. Las armas tienen un delay de 100ms para evitar
+--- conflictos con la animación de equip que lanza QB al usar el ítem.
 RegisterNUICallback('UseItem', function(data, cb)
     if data.item and data.item.type == "weapon" then
         Citizen.SetTimeout(100, function()
@@ -863,12 +1168,19 @@ RegisterNUICallback('UseItem', function(data, cb)
     cb('ok')
 end)
 
+--- Procesa un movimiento de ítem entre slots (drag & drop, split, swap).
+--- El servidor es la autoridad: valida pesos, permisos y ejecuta el cambio.
+---
+--- @param data  table  {fromInventory, toInventory, fromSlot, toSlot, fromAmount, toAmount}
 RegisterNUICallback('SetInventoryData', function(data, cb)
     TriggerServerEvent('DP-Inventory:server:SetInventoryData', data.fromInventory, data.toInventory, data.fromSlot,
         data.toSlot, data.fromAmount, data.toAmount)
     cb('ok')
 end)
 
+--- Da un ítem a otro jugador cercano. El servidor valida proximidad y posesión.
+---
+--- @param data  table  {target (serverId), item, amount, slot, info}
 RegisterNUICallback('GiveItem', function(data, cb)
     if data.target then
         QBCore.Functions.TriggerCallback('DP-Inventory:server:giveItem', function(success)
@@ -880,6 +1192,8 @@ RegisterNUICallback('GiveItem', function(data, cb)
     end
 end)
 
+--- Busca los jugadores en un radio de 10m y devuelve sus server IDs y nombres a la UI.
+--- Usado para el selector de jugador al dar ítems.
 RegisterNUICallback('GetNearbyPlayers', function(_, cb)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
@@ -902,11 +1216,17 @@ RegisterNUICallback('GetNearbyPlayers', function(_, cb)
     end
 end)
 
+--- Muestra una notificación de QBCore desde la UI (para eventos NUI que necesitan feedback).
 RegisterNUICallback('Notify', function(data, cb)
     QBCore.Functions.Notify(data.message, data.type)
     cb('ok')
 end)
 
+--- Devuelve a la UI los datos del ítem arma y sus accesorios formateados.
+--- Usado al abrir el panel de modificación de armas.
+---
+--- @param cData  table  {weapon (nombre), ItemData (ítem completo)}
+--- @return       table  {WeaponData, AttachmentData}
 RegisterNUICallback('GetWeaponData', function(cData, cb)
     local data = {
         WeaponData = QBCore.Shared.Items[cData.weapon],
@@ -915,6 +1235,10 @@ RegisterNUICallback('GetWeaponData', function(cData, cb)
     cb(data)
 end)
 
+--- Elimina un accesorio de un arma. Delega a qb-weapons en el servidor y
+--- actualiza visualmente el componente en el ped si el arma está en mano.
+---
+--- @param data  table  {WeaponData, AttachmentData}
 RegisterNUICallback('RemoveAttachment', function(data, cb)
     local ped = PlayerPedId()
     local WeaponData = data.WeaponData
@@ -924,7 +1248,9 @@ RegisterNUICallback('RemoveAttachment', function(data, cb)
     QBCore.Functions.TriggerCallback('qb-weapons:server:RemoveAttachment', function(NewAttachments)
         if NewAttachments ~= false then
             local Attachies = {}
+            -- Eliminamos el componente visual del ped
             RemoveWeaponComponentFromPed(ped, joaat(WeaponData.name), joaat(Attachment))
+            -- Reconstruimos la lista de accesorios activos para devolver a la UI
             for _, v in pairs(NewAttachments) do
                 for attachmentType, weapons in pairs(allAttachments) do
                     local componentHash = weapons[WeaponData.name]
@@ -945,12 +1271,17 @@ RegisterNUICallback('RemoveAttachment', function(data, cb)
             }
             cb(DJATA)
         else
+            -- El servidor falló pero eliminamos visualmente de todos modos
             RemoveWeaponComponentFromPed(ped, joaat(WeaponData.name), joaat(Attachment))
             cb({})
         end
     end, data.AttachmentData, WeaponData)
 end)
 
+--- Añade un accesorio a un arma. Delega a qb-weapons y aplica el componente
+--- visualmente al ped si el arma está actualmente en mano.
+---
+--- @param data  table  {WeaponData, AttachmentItem}
 RegisterNUICallback('AddAttachment', function(data, cb)
     local ped = PlayerPedId()
     local WeaponData = data.WeaponData
@@ -958,6 +1289,7 @@ RegisterNUICallback('AddAttachment', function(data, cb)
     local allAttachments = exports['qb-weapons']:getConfigWeaponAttachments()
 
     local weaponComponent = allAttachments[AttachmentItem.name] and allAttachments[AttachmentItem.name][WeaponData.name]
+
     if not weaponComponent then
         cb({
             success = false
@@ -973,11 +1305,13 @@ RegisterNUICallback('AddAttachment', function(data, cb)
             return
         end
 
+        -- Si el arma está en mano, aplicamos el componente visual inmediatamente
         local currentWeapon = GetSelectedPedWeapon(ped)
         if currentWeapon == joaat(WeaponData.name) then
             GiveWeaponComponentToPed(ped, joaat(WeaponData.name), joaat(weaponComponent))
         end
 
+        -- Reconstruimos la lista de accesorios para devolver a la UI
         local Attachies = {}
         for _, v in pairs(result.attachments) do
             for attachmentType, weapons in pairs(allAttachments) do
@@ -1002,11 +1336,23 @@ RegisterNUICallback('AddAttachment', function(data, cb)
     end, AttachmentItem, WeaponData)
 end)
 
+--- Callback principal de acciones contextuales del inventario.
+--- Gestiona TODAS las acciones del menú de acciones (botón derecho en la UI):
+---   · ROPA: quitar/cambiar prendas individuales
+---   · PERSONAJE: amenazar, cachear, cargar, piggyback, Rockstar Editor
+---   · ARMAS: estilos de apuntado, toggle/posición de armas a la espalda
+---   · VEHÍCULO: motor, cierre, cambio de asiento, puertas, ventanillas, ancla
+---
+--- @param data  table  {action (string con el nombre de la acción)}
 RegisterNUICallback('PerformAction', function(data, cb)
     local action = data.action
     local ped = PlayerPedId()
 
-    -- [ ACCIONES DE ROPA ]
+    -- ────────────────────────────────────────────────
+    --  [ ACCIONES DE ROPA ]
+    --  Ejecutan comandos nativos de qb-clothing para
+    --  quitar/cambiar prendas individuales sin abrir el vestuario completo
+    -- ────────────────────────────────────────────────
     if action == 'ropa_sombrero' then
         ExecuteCommand('hat')
     elseif action == 'ropa_gafas' then
@@ -1038,10 +1384,15 @@ RegisterNUICallback('PerformAction', function(data, cb)
     elseif action == 'ropa_zapatos' then
         ExecuteCommand('shoes')
 
-        -- [ ACCIONES DE PERSONAJE ]
+        -- ────────────────────────────────────────────────
+        --  [ ACCIONES DE PERSONAJE ]
+        -- ────────────────────────────────────────────────
     elseif action == 'amenazar' then
         ExecuteCommand('th')
+
     elseif action == 'cachear' then
+        -- Requiere que el jugador objetivo tenga manos arriba, esté esposado o muerto.
+        -- Usa una barra de progreso de 2.5s con animación de cacheo.
         local player, distance = QBCore.Functions.GetClosestPlayer()
         if player ~= -1 and distance <= 2.5 then
             local targetPed = GetPlayerPed(player)
@@ -1073,6 +1424,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
         else
             QBCore.Functions.Notify("No hay nadie lo suficientemente cerca.", "error", 4500)
         end
+
     elseif action == 'cargar' then
         ExecuteCommand('carry')
     elseif action == 'caballito' then
@@ -1080,12 +1432,17 @@ RegisterNUICallback('PerformAction', function(data, cb)
     elseif action == 'documentos' then
         QBCore.Functions.Notify('¡PRÓXIMAMENTE DISPONIBLE!', 'primary', 5000)
 
-        -- [ ROCKSTAR EDITOR ]
+        -- ────────────────────────────────────────────────
+        --  [ ROCKSTAR EDITOR ]
+        --  Permite grabar clips desde el inventario con
+        --  segmentación automática en 25s / 1min / 5min.
+        -- ────────────────────────────────────────────────
     elseif action == 'rockstar_start' then
         StartRecording(1)
         QBCore.Functions.Notify("🔴 Grabación iniciada", "success", 3000)
 
     elseif action == 'rockstar_start_25' then
+        -- Clips de 25 segundos con auto-guardado y reinicio
         if IsRecording() then
             QBCore.Functions.Notify("Ya hay una grabación activa.", "error", 3000)
         else
@@ -1105,6 +1462,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
         end
 
     elseif action == 'rockstar_start_60' then
+        -- Clips de 1 minuto con auto-guardado y reinicio
         if IsRecording() then
             QBCore.Functions.Notify("Ya hay una grabación activa.", "error", 3000)
         else
@@ -1112,7 +1470,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             QBCore.Functions.Notify("🔴 Grabando — clips de 1 minuto", "success", 3000)
             CreateThread(function()
                 while IsRecording() do
-                    Wait(55000) -- 55s para tener margen antes del corte
+                    Wait(55000) -- 55s para tener margen antes del corte del motor
                     if IsRecording() then
                         StopRecordingAndSaveClip()
                         Wait(200)
@@ -1124,6 +1482,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
         end
 
     elseif action == 'rockstar_start_300' then
+        -- Clips de 5 minutos (límite real del motor: ~4.9min por clip)
         if IsRecording() then
             QBCore.Functions.Notify("Ya hay una grabación activa.", "error", 3000)
         else
@@ -1131,7 +1490,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             QBCore.Functions.Notify("🔴 Grabando — clips de 5 minutos", "success", 3000)
             CreateThread(function()
                 while IsRecording() do
-                    Wait(295000) -- Sigue siendo 4.9m por clip (límite del motor)
+                    Wait(295000) -- 4.9min para respetar el límite del motor
                     if IsRecording() then
                         StopRecordingAndSaveClip()
                         Wait(200)
@@ -1159,28 +1518,37 @@ RegisterNUICallback('PerformAction', function(data, cb)
         end
 
     elseif action == 'rockstar_editor' then
-        -- Abre el Rockstar Editor nativo de FiveM (el que está en el menú principal)
-        ActivateRockstarEditor()
+        ActivateRockstarEditor() -- Abre el Rockstar Editor nativo de FiveM
 
-        -- [ ACCIONES DE ARMAS ]
+        -- ────────────────────────────────────────────────
+        --  [ ACCIONES DE ARMAS ]
+        --  Estilos de apuntado: cambia la animación de apuntado del ped
+        --  y lo publica en el state bag para que otros jugadores lo vean.
+        --  Posiciones de armas a la espalda: delega en backitems.lua.
+        -- ────────────────────────────────────────────────
     elseif action == 'aim_default' then
         currentAimStyle = joaat("Default")
-        LocalPlayer.state:set('aimStyle', currentAimStyle, true)
+        LocalPlayer.state:set('aimStyle', currentAimStyle, true) -- Publicamos en red
         SetWeaponAnimationOverride(ped, currentAimStyle)
         QBCore.Functions.Notify("Estilo de apuntado: Normal", "success")
+
     elseif action == 'aim_gangster' then
         currentAimStyle = joaat("Gang1H")
         LocalPlayer.state:set('aimStyle', currentAimStyle, true)
         SetWeaponAnimationOverride(ped, currentAimStyle)
         QBCore.Functions.Notify("Estilo de apuntado: Gangster", "success")
+
     elseif action == 'aim_cowboy' then
         currentAimStyle = joaat("Hillbilly")
         LocalPlayer.state:set('aimStyle', currentAimStyle, true)
         SetWeaponAnimationOverride(ped, currentAimStyle)
         QBCore.Functions.Notify("Estilo de apuntado: Cowboy", "success")
+
     elseif action == 'weap_toggle' then
+        -- Toggle de visibilidad de armas a la espalda (backitems.lua)
         TriggerEvent('DP-Inventory:client:ToggleBackItems')
         QBCore.Functions.Notify("Mostrando/Ocultando armas", "primary")
+
     elseif action == 'weap_front' then
         TriggerEvent('DP-Inventory:client:SetWeaponPosition', 'front')
         QBCore.Functions.Notify("Posición: Delante", "primary")
@@ -1203,13 +1571,13 @@ RegisterNUICallback('PerformAction', function(data, cb)
         TriggerEvent('DP-Inventory:client:SetWeaponPosition', 'leg')
         QBCore.Functions.Notify("Posición: Pierna", "primary")
 
-        -- ==========================================
-        -- [ ACCIONES DE VEHÍCULO ]
-        -- ==========================================
+        -- ────────────────────────────────────────────────
+        --  [ ACCIONES DE VEHÍCULO ]
+        --  Solo se ejecutan si el jugador está dentro de un vehículo.
+        -- ────────────────────────────────────────────────
     elseif string.find(action, "veh_") then
         local veh = GetVehiclePedIsIn(ped, false)
 
-        -- Si no está en un vehículo, ignoramos
         if veh == 0 then
             QBCore.Functions.Notify("Debes estar en un vehículo.", "error")
             cb('ok')
@@ -1217,6 +1585,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
         end
 
         if action == 'veh_engine' then
+            -- Alterna el motor encendido/apagado
             local isRunning = GetIsVehicleEngineRunning(veh)
             SetVehicleEngineOn(veh, not isRunning, false, true)
             QBCore.Functions.Notify(isRunning and "Motor Apagado" or "Motor Encendido", "primary")
@@ -1225,7 +1594,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             QBCore.Functions.Notify("¡PROXIMAMENTE DISPONIBLE!", "primary")
 
         elseif action == 'veh_keys' then
-            -- Alterna el seguro de las puertas
+            -- Alterna el seguro de las puertas del vehículo
             local lockStatus = GetVehicleDoorLockStatus(veh)
             if lockStatus == 1 or lockStatus == 0 then
                 SetVehicleDoorsLocked(veh, 2)
@@ -1235,51 +1604,51 @@ RegisterNUICallback('PerformAction', function(data, cb)
                 QBCore.Functions.Notify("Vehículo Desbloqueado", "success")
             end
 
-            -- SISTEMAS DE CONDUCCIÓN
+            -- ── SISTEMAS DE CONDUCCIÓN ──
         elseif action == 'veh_drift' then
             local ped = PlayerPedId()
             local veh = GetVehiclePedIsIn(ped, false)
-
-            -- Solo llamamos al drift si realmente estás en un coche y eres el conductor
+            -- Solo activo si eres el conductor (asiento -1)
             if veh ~= 0 and GetPedInVehicleSeat(veh, -1) == ped then
-                -- Llama a la función que ahora vive en DP-Utilitylib
                 exports['DP-Utilitylib']:ToggleDrift(veh)
             else
                 QBCore.Functions.Notify("Debes estar conduciendo un vehículo.", "error", 3000)
             end
 
         elseif action == 'veh_limitador' then
-            -- Llama al export de tu HUD
             exports['DP-Hud']:ToggleLimiter()
 
         elseif action == 'veh_crucero' then
-            -- Llama al export de tu HUD
             exports['DP-Hud']:ToggleCruise()
 
-            -- ASIENTOS DINÁMICOS Y NORMALES
+            -- ── CAMBIO DE ASIENTO ──
+            -- Formato de action: 'veh_sit_di' (conductor), 'veh_sit_dd' (copiloto),
+            -- 'veh_sit_ti' (trasero izq), 'veh_sit_td' (trasero der) o número directo
         elseif string.find(action, "veh_sit_") then
             local seatStr = action:gsub("veh_sit_", "")
             local seatIdx = nil
 
             if seatStr == "di" then
-                seatIdx = -1
+                seatIdx = -1 -- Conductor
             elseif seatStr == "dd" then
-                seatIdx = 0
+                seatIdx = 0 -- Copiloto
             elseif seatStr == "ti" then
-                seatIdx = 1
+                seatIdx = 1 -- Trasero izquierdo
             elseif seatStr == "td" then
-                seatIdx = 2
+                seatIdx = 2 -- Trasero derecho
             else
-                seatIdx = tonumber(seatStr)
+                seatIdx = tonumber(seatStr) -- Asiento numérico genérico
             end
 
             if seatIdx and IsVehicleSeatFree(veh, seatIdx) then
                 SetPedIntoVehicle(ped, veh, seatIdx)
             end
 
-            -- PUERTAS Y MALETEROS
+            -- ── PUERTAS Y MALETEROS ──
+            -- Toggle: si está abierta (ángulo > 0) la cierra, si está cerrada la abre
+
         elseif action == 'veh_hood' then
-            local door = 4
+            local door = 4 -- Capó/motor
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
@@ -1287,7 +1656,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             end
 
         elseif action == 'veh_trunk' then
-            local door = 5
+            local door = 5 -- Maletero trasero
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
@@ -1295,7 +1664,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             end
 
         elseif action == 'veh_door_fl' then
-            local door = 0
+            local door = 0 -- Puerta frontal izquierda (conductor)
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
@@ -1303,7 +1672,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             end
 
         elseif action == 'veh_door_fr' then
-            local door = 1
+            local door = 1 -- Puerta frontal derecha (copiloto)
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
@@ -1311,7 +1680,7 @@ RegisterNUICallback('PerformAction', function(data, cb)
             end
 
         elseif action == 'veh_door_rl' then
-            local door = 2
+            local door = 2 -- Puerta trasera izquierda
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
@@ -1319,14 +1688,16 @@ RegisterNUICallback('PerformAction', function(data, cb)
             end
 
         elseif action == 'veh_door_rr' then
-            local door = 3
+            local door = 3 -- Puerta trasera derecha
             if GetVehicleDoorAngleRatio(veh, door) > 0.0 then
                 SetVehicleDoorShut(veh, door, false)
             else
                 SetVehicleDoorOpen(veh, door, false, false)
             end
 
-            -- VENTANILLAS
+            -- ── VENTANILLAS ──
+            -- Toggle: si está intacta (entera) la baja, si está rota la sube
+
         elseif action == 'veh_win_fl' then
             if IsVehicleWindowIntact(veh, 0) then
                 RollDownWindow(veh, 0)
@@ -1352,39 +1723,33 @@ RegisterNUICallback('PerformAction', function(data, cb)
                 RollUpWindow(veh, 3)
             end
 
-            -- SISTEMAS DE ANCLA
+            -- ── SISTEMA DE ANCLA (Solo barcos, clase 14) ──
         elseif action == 'veh_anchor' then
-            -- Verificamos por seguridad que realmente sea un barco (Clase 14)
             if GetVehicleClass(veh) == 14 then
                 local isAnchored = Entity(veh).state.isAnchored
 
                 if isAnchored then
-                    -- QUITAR ANCLA: Lo liberamos de la red y apagamos el bucle
+                    -- QUITAR ANCLA: libera el barco
                     Entity(veh).state:set('isAnchored', false, true)
                     SetBoatAnchor(veh, false)
                     QBCore.Functions.Notify("Ancla recogida. Ya puedes navegar.", "success")
                 else
-                    -- ECHAR ANCLA: Apagamos motor y activamos la red
+                    -- ECHAR ANCLA: apaga motor y bloquea movimiento horizontal
                     Entity(veh).state:set('isAnchored', true, true)
                     SetVehicleEngineOn(veh, false, false, true)
                     SetBoatAnchor(veh, true)
                     QBCore.Functions.Notify("Ancla echada. El barco está asegurado a las olas.", "primary")
 
-                    -- (Solo activo mientras está el ancla)
+                    -- Thread de ancla: anula velocidad X/Y en cada frame mientras está anclado.
+                    -- Permite el movimiento vertical (oleaje) pero no el desplazamiento.
                     CreateThread(function()
-                        -- Solo funciona mientras la variable de red sea true
                         while Entity(veh).state.isAnchored do
                             Wait(0)
-                            -- Failsafe: Si el barco desaparece, rompemos el bucle
                             if not DoesEntityExist(veh) then
-                                break
+                                break -- Failsafe: el vehículo desapareció
                             end
-
-                            -- Leemos la velocidad actual del barco
                             local vel = GetEntityVelocity(veh)
-
-                            -- Anulamos la velocidad horizontal (X, Y) para que no se desplace
-                            -- Dejamos intacta la vertical (vel.z) para que suba y baje con el oleaje
+                            -- Anulamos X e Y pero respetamos Z (subida/bajada por oleaje)
                             SetEntityVelocity(veh, 0.0, 0.0, vel.z)
                         end
                     end)
@@ -1398,17 +1763,21 @@ RegisterNUICallback('PerformAction', function(data, cb)
     cb('ok')
 end)
 
+--- Cierra el inventario secundario desde la UI sin cerrar el primario.
+--- Si era un maletero, lo cierra físicamente también.
 RegisterNUICallback('CloseSecondaryInventory', function(data, cb)
     if data.name then
-        -- Si el inventario que se fuerza a cerrar es un maletero, cierra la puerta físicamente
         if data.name:find('trunk-') then
-            CloseTrunk()
+            CloseTrunk() -- Cierra la puerta del maletero (vehicles.lua)
         end
         TriggerServerEvent('DP-Inventory:server:closeInventory', data.name)
     end
     cb('ok')
 end)
 
+--- Guarda el arma actualmente en mano y reproduce la animación de enfundado.
+--- Incluye protección anti-spam con `isHolstering` y un timer de 1s.
+--- Muestra el aviso visual de 'holster' (arma guardada) al completar.
 RegisterNUICallback('HolsterWeapon', function(data, cb)
     local ped = PlayerPedId()
     if isHolstering then
@@ -1423,12 +1792,13 @@ RegisterNUICallback('HolsterWeapon', function(data, cb)
         SetPedCurrentWeaponVisible(ped, false, false, false, false)
         SetCurrentPedWeapon(ped, joaat('WEAPON_UNARMED'), true)
 
+        -- Animación de enfundado solo si no está en vehículo
         if not IsPedInAnyVehicle(ped, false) then
             LoadAnimDict('reaction@intimidation@1h')
             TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 1.0, 1000, 48, 0, false, false, false)
         end
 
-        -- Extraemos los datos del arma y disparamos el aviso visual de GUARDADO
+        -- Buscamos el nombre del arma para el aviso visual
         local weaponName = nil
         for _, v in pairs(QBCore.Shared.Weapons) do
             if v.hash == currentWeapon or joaat(v.name) == currentWeapon then
@@ -1441,10 +1811,10 @@ RegisterNUICallback('HolsterWeapon', function(data, cb)
             TriggerEvent('DP-Inventory:client:ItemBox', QBCore.Shared.Items[weaponName], 'holster', 1)
         end
 
+        -- Reseteo del flag tras 1 segundo (duración aprox. de la animación)
         if holsterTimer then
             Citizen.RemoveTimeout(holsterTimer)
         end
-
         holsterTimer = Citizen.SetTimeout(1000, function()
             isHolstering = false
             holsterTimer = nil
@@ -1454,12 +1824,18 @@ RegisterNUICallback('HolsterWeapon', function(data, cb)
     cb('ok')
 end)
 
+--- Solicita al servidor todos los inventarios activos para el panel de admin.
+--- La respuesta llega vía el evento 'DP-Inventory:client:OpenMasterMenu'.
 RegisterNUICallback('GetAdminMasterData', function(_, cb)
     QBCore.Functions.TriggerCallback('DP-Inventory:server:GetAdminMasterData', function(data)
         cb(data)
     end)
 end)
 
+--- Abre el inventario de un jugador o un stash directamente desde el panel admin de la UI.
+--- Activa `isTransitioningAdmin` para evitar que el CloseInventory normal interrumpa la transición.
+---
+--- @param data  table  {type ('player'|'stash'), id (serverId o stashId)}
 RegisterNUICallback('ForceOpenAdmin', function(data, cb)
     isTransitioningAdmin = true
     if data.type == "player" then
@@ -1467,12 +1843,15 @@ RegisterNUICallback('ForceOpenAdmin', function(data, cb)
     else
         TriggerServerEvent("DP-Inventory:server:ForceOpenStash", data.id)
     end
+    -- Desactivamos el flag tras 1 segundo (margen para que llegue el nuevo inventario)
     SetTimeout(1000, function()
         isTransitioningAdmin = false
     end)
     cb('ok')
 end)
 
+--- Guarda la posición visual del inventario en el servidor y la aplica localmente.
+--- @param data  table  {position (string)}
 RegisterNUICallback('SaveInventoryPosition', function(data, cb)
     inventoryPosition = data.position
     TriggerServerEvent('DP-Inventory:server:SavePosition', data.position)
@@ -1480,15 +1859,16 @@ RegisterNUICallback('SaveInventoryPosition', function(data, cb)
     cb('ok')
 end)
 
--- Reemplaza tu actual forma de abrir el inventario. Busca donde tengas "SetNuiFocus(true, true)"
--- al abrir el inventario y cámbialo por llamar a "UpdateNuiFocus()"
-
+--- Notifica al cliente que el jugador está escribiendo/dejando de escribir en la UI.
+--- Actualiza el foco NUI en tiempo real para que el teclado no mueva al personaje.
 RegisterNUICallback('SetTypingFocus', function(data, cb)
     isTypingInUI = data.isTyping
-    UpdateNuiFocus() -- Actualiza el control en tiempo real
+    UpdateNuiFocus()
     cb('ok')
 end)
 
+--- Guarda la preferencia de movimiento con el inventario abierto.
+--- Actualiza el foco NUI inmediatamente para aplicar el cambio en vivo.
 RegisterNUICallback('SaveMovePreference', function(data, cb)
     moveWhileOpen = data.status
     TriggerServerEvent('DP-Inventory:server:SaveMovePref', data.status)
@@ -1496,113 +1876,35 @@ RegisterNUICallback('SaveMovePreference', function(data, cb)
     cb('ok')
 end)
 
+--- Guarda la preferencia de sonidos del inventario en el servidor.
 RegisterNUICallback('SaveSoundPref', function(data, cb)
     TriggerServerEvent('DP-Inventory:server:SaveSoundPref', data.status)
     cb('ok')
 end)
 
--- BUCLE PROTECTOR (Evita disparos/puñetazos accidentales y controla la cámara)
-local blockPauseMenuTimer = 0
+-- ============================================================
+--  [9] EVENTOS DE INTEGRACIÓN EXTERNA (DP-Boombox)
+-- ============================================================
 
-CreateThread(function()
-    while true do
-        local sleep = 500
-
-        -- Si el inventario está abierto, escaneamos a 0ms sin excusas
-        if isInventoryOpen then
-            sleep = 0
-            blockPauseMenuTimer = GetGameTimer() + 400 -- Renovamos el bloqueo 400ms hacia el futuro
-
-            if moveWhileOpen and not isTypingInUI then
-                DisableControlAction(0, 24, true) -- Bloquea Click Izquierdo (Ataque)
-                DisableControlAction(0, 257, true) -- Bloquea Ataque 2
-                DisableControlAction(0, 25, true) -- Bloquea Click Derecho (Apuntar)
-                DisableControlAction(0, 263, true) -- Bloquea Cuerpo a cuerpo
-                DisableControlAction(0, 37, true) -- Bloquea Rueda de armas (TAB)
-                DisablePlayerFiring(PlayerPedId(), true) -- Bloquea disparos extra
-
-                -- SI LA 'J' NO ESTÁ ACTIVA (Modo Cursor normal) -> Bloqueamos la cámara
-                if not isCursorModeActive then
-                    DisableControlAction(0, 1, true) -- Bloquea mover cámara Izq/Der
-                    DisableControlAction(0, 2, true) -- Bloquea mover cámara Arr/Aba
-                end
-            end
-        end
-
-        -- 🛡️ EL ESCUDO ANTI-PAUSE MENU (Activo durante y 400ms después de cerrar)
-        if GetGameTimer() < blockPauseMenuTimer then
-            sleep = 0
-            DisableControlAction(0, 200, true) -- ESC
-            DisableControlAction(0, 322, true) -- ESC Alternativo
-        end
-
-        Wait(sleep)
-    end
-end)
-
--- ============================================
--- 📻 INTEGRACIÓN CON DP-BOOMBOX_V2 (RADIO DE COCHES)
--- ============================================
-
--- 1. Vigilante en segundo plano: Detecta si el coche tiene radio al subirse
-CreateThread(function()
-    local inVehicle = false
-    while true do
-        Wait(1500) -- Revisa cada segundo y medio (No afecta al rendimiento)
-        local ped = PlayerPedId()
-
-        if IsPedInAnyVehicle(ped, false) then
-            if not inVehicle then
-                inVehicle = true
-                local veh = GetVehiclePedIsIn(ped, false)
-                local plate = GetVehicleNumberPlateText(veh)
-
-                if plate then
-                    -- Limpiamos espacios en blanco de la matrícula por seguridad
-                    plate = string.gsub(plate, "^%s*(.-)%s*$", "%1")
-
-                    -- Preguntamos a la base de datos a través del Boombox
-                    QBCore.Functions.TriggerCallback('DP-Boombox_v2:checkCarRadio', function(hasRadio)
-                        SendNUIMessage({
-                            action = "updateVehicleRadio",
-                            status = hasRadio
-                        })
-                    end, plate)
-                end
-            end
-        else
-            if inVehicle then
-                inVehicle = false
-                -- Al bajarse del coche, apagamos el botón del inventario por seguridad
-                SendNUIMessage({
-                    action = "updateVehicleRadio",
-                    status = false
-                })
-            end
-        end
-    end
-end)
-
--- 2. Recibimos el clic del botón desde el JavaScript del inventario (Axios)
+--- Recibe el clic del botón de radio desde la UI y abre el Boombox.
+--- Cierra el inventario primero para una transición limpia.
 RegisterNUICallback('abrirRadioDesdeInventario', function(data, cb)
-    -- 1. Cerramos el inventario
-    -- (Por lo general, estos eventos ocultan la UI y devuelven el control al jugador)
+    -- Cerramos el inventario antes de abrir la radio
     SetNuiFocus(false, false)
     SendNUIMessage({
         action = "close"
     })
     TriggerEvent('DP-Inventory:client:closeInv')
 
-    -- 2. Esperamos un pequeño instante para que la transición sea suave
-    Wait(250)
+    Wait(250) -- Pequeña espera para que la transición de cierre sea suave
 
-    -- 3. ¡Ejecutamos el Export de tu Boombox para abrir la radio del coche!
     exports['DP-Boombox_v2']:OpenCarRadio()
 
     cb('ok')
 end)
 
--- 3. Forzar actualización instantánea al instalar la radio (Recibe la orden del Boombox)
+--- Actualización inmediata del estado de la radio cuando se instala/desinstala
+--- en el vehículo actual (enviada por el Boombox sin que el jugador se baje).
 RegisterNetEvent('DP-Inventory:client:UpdateVehicleRadio', function(status)
     SendNUIMessage({
         action = "updateVehicleRadio",
@@ -1610,11 +1912,15 @@ RegisterNetEvent('DP-Inventory:client:UpdateVehicleRadio', function(status)
     })
 end)
 
--- ==========================================================================
--- EXPORTS PARA OTROS SCRIPTS (Ej: DP-AdminMenu)
--- ==========================================================================
+-- ============================================================
+--  [10] EXPORTS PARA OTROS RECURSOS
+-- ============================================================
 
--- Abrir el inventario de otro jugador
+--- Abre el inventario de otro jugador desde un recurso externo (ej: DP-AdminMenu).
+--- Requiere que el jugador local tenga los permisos adecuados (el servidor lo valida).
+---
+--- Uso: exports['DP-Inventory']:OpenPlayerInventory(targetId)
+--- @param targetId  number  Server ID del jugador objetivo
 exports('OpenPlayerInventory', function(targetId)
     if not targetId then
         return
@@ -1622,7 +1928,11 @@ exports('OpenPlayerInventory', function(targetId)
     TriggerServerEvent("DP-Inventory:server:OpenInventory", "otherplayer", targetId)
 end)
 
--- Abrir un maletero, guantera o stash específico
+--- Abre un stash/maletero/guantera específico desde un recurso externo.
+--- El servidor valida permisos antes de abrirlo.
+---
+--- Uso: exports['DP-Inventory']:OpenStash(stashId)
+--- @param stashId  string  Identificador del inventario (ej: 'trunk-ABC123', 'stash_banco')
 exports('OpenStash', function(stashId)
     if not stashId then
         return

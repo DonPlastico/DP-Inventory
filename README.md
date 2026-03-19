@@ -94,9 +94,6 @@ Si has entendido el proyecto, la estructura y las reglas, responde ÚNICAMENTE c
 
 
 
-
-
-
 ARREGLOS/IDEAS:
 - PAGE/TAB PERSONAJE:
   - BOTÓN DE DOCUMENTOS, HAY QUE REPLICAR EL SCRIPT DE K5_DOCUMENTS DE 0 Y METER UN EXPORT A ESTE BOTÓN.

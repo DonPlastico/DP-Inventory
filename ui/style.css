@@ -6,30 +6,11 @@
 
     /* --- ESTADOS (Éxito, Peligro, Aviso) --- */
     --success: #0ea021;
-    --success-dark: #0b801a;
-    --success-badge: #1e7e34;
-    --warning-text: rgb(187, 187, 187);
     --danger: #ff4444;
-    --danger-bg: #5a1a1a;
-    --danger-hover: #7a2a2a;
     --danger-text: #ffcccc;
-    --danger-badge: #a71d2a;
 
     /* --- FONDOS --- */
-    --bg-panel: rgba(0, 0, 0, 0.9);
-    /* Fondo Principal */
-    --bg-element: rgba(0, 0, 0, 0.9);
-    /* Cabeceras, Tarjetas, Secciones */
-    --bg-table: rgba(0, 0, 0, 0.9);
-    /* Fondo contenedor tabla */
-    --bg-hover: rgba(255, 255, 255, 0.2);
-    /* Hover en filas/tablas */
-    --bg-border: rgba(255, 255, 255, 0.1);
-    /* Bordes y separadores */
-    --bg-button: #333333;
-    /* Botones neutros */
-    --bg-button-hover: #999999;
-    /* Hover neutro */
+    --bg-panel: rgba(0, 0, 0, 0.8);
 
     /* --- TEXTOS --- */
     --text-main: #ffffff;
@@ -40,37 +21,9 @@
     /* --- MÍOS --- */
     --primary-color: rgba(255, 255, 255, 1);
     --secondary-color: rgba(255, 255, 255, 0.8);
-    --bg-color: rgba(0, 0, 0, 0.9);
     --hotbar: rgba(255, 255, 255, 0.7);
     --hover-color: rgba(255, 255, 255, 0.2);
     --border-color: rgba(255, 255, 255, 0.1);
-
-    /* --- NOTIFICACIONES --- */
-    --notif-bg: rgba(0, 0, 0, 0.95);
-    /* Fondo negro opaco (contexto image_e0d624.png) */
-    --notif-border-default: rgba(255, 255, 255, 0.08);
-    /* Borde gris sutil */
-
-    /* --- Sombras/Glows Neutros (image_e0d624.png context) --- */
-    --notif-shadow-strong: rgba(255, 255, 255, 0.3);
-    /* Resplandor blanco para EQUIP/ADD */
-    --notif-shadow-default: rgba(255, 255, 255, 0.15);
-    /* Resplandor gris/blanco para USE/HOLSTER */
-    --notif-shadow-weak: rgba(100, 100, 100, 0.1);
-    /* Sombra ténue para REMOVE */
-
-    /* --- Fondos de Tags Neutros --- */
-    --notif-tag-bg-accent: #ffffff;
-    /* Para EQUIP/ADD */
-    --notif-tag-text-accent: #000000;
-
-    --notif-tag-bg-standard: rgba(255, 255, 255, 0.15);
-    /* Para USE/HOLSTER */
-    --notif-tag-text-standard: #ffffff;
-
-    --notif-tag-bg-dim: rgba(255, 255, 255, 0.05);
-    /* Para REMOVE */
-    --notif-tag-text-dim: rgba(255, 255, 255, 0.7);
 }
 
 html,
@@ -108,7 +61,7 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--bg-border);
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 2px;
 }
 
@@ -161,7 +114,7 @@ div {
     height: auto;
     display: flex;
     flex-direction: column;
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--bg-panel);
     padding: 5px;
     border-radius: 4px;
 }
@@ -398,7 +351,7 @@ div {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+    text-shadow: 1px 1px 2px var(--bg-panel);
 }
 
 .item-slot:hover {
@@ -407,7 +360,7 @@ div {
 }
 
 .item-slot:empty {
-    background-color: var(--bg-color);
+    background-color: var(--bg-panel);
     border: 1px solid var(--border-color);
 }
 
@@ -424,7 +377,7 @@ div {
     display: flex;
     align-items: center;
     justify-content: center;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+    text-shadow: 1px 1px 2px var(--bg-panel);
 }
 
 .item-slot-label {
@@ -514,7 +467,7 @@ div {
     align-items: flex-start;
     gap: 6px;
     padding: 5px;
-    background: var(--bg-color);
+    background: var(--bg-panel);
     border: 1px solid var(--border-color);
     border-radius: 5px;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
@@ -524,7 +477,7 @@ div {
 .hotbar .item-slot {
     width: 7.2vh;
     height: 7.2vh;
-    background: var(--bg-color);
+    background: var(--bg-panel);
     border: 1px solid var(--border-color);
     border-bottom: none;
     border-radius: 4px 4px 0 0;
@@ -567,7 +520,7 @@ div {
     color: var(--primary-color);
     font-size: 0.8vh;
     font-weight: 700;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    text-shadow: 0 1px 3px var(--bg-panel);
     line-height: 1;
 }
 
@@ -581,7 +534,7 @@ div {
 
 .hotbar .item-slot-label>p {
     color: var(--secondary-color);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    text-shadow: 0 1px 3px var(--bg-panel);
     font-size: 0.6vh;
 }
 
@@ -614,7 +567,7 @@ div {
 .hotbar-slot-label {
     width: 100%;
     min-height: 1vh;
-    background: var(--bg-color);
+    background: var(--bg-panel);
     border-top: none;
     border: 1px solid var(--border-color);
     border-radius: 0 0 6px 6px;
@@ -638,7 +591,7 @@ div {
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    text-shadow: 0 1px 2px var(--bg-panel);
 }
 
 /* ==========================================================
@@ -649,37 +602,41 @@ div {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 6px; /* Separación más ajustada */
+    gap: 6px;
+    /* Separación más ajustada */
     position: fixed;
     /* Bajamos la posición (evita el chat) y pegamos a 5px de la izquierda */
-    top: 40%; 
-    left: 5px; 
+    top: 40%;
+    left: 5px;
     z-index: 9999;
     pointer-events: none;
 }
 
 .notification-slot {
-    display: flex; 
-    align-items: center; 
-    width: 230px; /* Más estrecho */
-    height: 45px; /* Altura súper reducida */
+    display: flex;
+    align-items: center;
+    width: 230px;
+    /* Más estrecho */
+    height: 45px;
+    /* Altura súper reducida */
     border-radius: 4px;
     padding: 6px 8px;
     box-sizing: border-box;
     overflow: hidden;
     position: relative;
-    
-    background: rgba(0, 0, 0, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.1); 
-    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5); 
-    
+
+    background: var(--bg-panel);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+
     transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 /* --- Columna Izquierda: Icono --- */
 .notif-left {
-    flex-shrink: 0; 
-    width: 30px; /* Foto mucho más pequeña */
+    flex-shrink: 0;
+    width: 30px;
+    /* Foto mucho más pequeña */
     height: 30px;
     display: flex;
     justify-content: center;
@@ -691,23 +648,25 @@ div {
 .notif-left img {
     max-width: 100%;
     max-height: 100%;
-    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3)); 
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.1));
 }
 
 /* --- Columna Derecha: Información --- */
 .notif-right {
-    flex-grow: 1; 
+    flex-grow: 1;
     display: flex;
-    flex-direction: column; 
-    justify-content: center; /* Centramos el bloque de texto verticalmente */
-    gap: 3px; /* Espacio mínimo entre el tag y el nombre */
+    flex-direction: column;
+    justify-content: center;
+    /* Centramos el bloque de texto verticalmente */
+    gap: 3px;
+    /* Espacio mínimo entre el tag y el nombre */
     height: 100%;
 }
 
 /* Fila superior (Estado + Cantidad) */
 .notif-top-row {
     display: flex;
-    justify-content: space-between; 
+    justify-content: space-between;
     align-items: center;
     line-height: 1;
     width: 100%;
@@ -715,32 +674,35 @@ div {
 
 /* Etiqueta de acción (Estilo Unificado) */
 .notif-action-tag {
-    font-size: 8px; /* Letra ultra pequeña */
+    font-size: 8px;
+    /* Letra ultra pequeña */
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 2px 5px;
     border-radius: 3px;
-    color: #ffffff; 
-    background: rgba(255, 255, 255, 0.08); 
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
 }
 
 /* Cantidad */
 .notif-amount {
-    font-size: 10px; /* Número más pequeño */
+    font-size: 10px;
+    /* Número más pequeño */
     font-weight: 800;
-    color: rgba(255, 255, 255, 0.6); 
+    color: rgba(255, 255, 255, 0.6);
 }
 
 /* Nombre del Ítem */
 .notif-item-name {
-    font-size: 11px; /* Letra principal reducida */
+    font-size: 11px;
+    /* Letra principal reducida */
     font-weight: 800;
     text-transform: uppercase;
-    color: #ffffff; 
+    color: #ffffff;
     line-height: 1.1;
     overflow: hidden;
-    text-overflow: ellipsis; 
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -761,29 +723,108 @@ div {
     transform: translateX(-50px) scale(0.9);
 }
 
+/* ==========================================================
+   ÍTEMS REQUERIDOS (DISEÑO MONOCROMÁTICO COMPACTO)
+   ========================================================== */
+
 .required-item-container {
     display: flex;
     justify-content: center;
     position: fixed;
-    bottom: 2vh;
+    bottom: 5vh;
+    /* Un poco más arriba para que respire */
     left: 50%;
-    transform: translate(-50%);
+    transform: translateX(-50%);
+    z-index: 9999;
+    pointer-events: none;
+    /* Que no interrumpa clics en el juego */
 }
 
 .required-item {
     display: flex;
     justify-content: center;
-    width: 25vw;
-    padding: 0 10px;
+    gap: 8px;
+    /* Espaciado fijo y limpio entre tarjetas */
+    flex-wrap: wrap;
+    /* Si son muchos, que pasen a la siguiente línea */
+    max-width: 80vw;
+    /* Que no se salga de la pantalla */
 }
 
 .required-item .item-slot {
-    margin-left: 10px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    width: 65px;
+    /* Tarjeta compacta */
+    height: 75px;
+    border-radius: 4px;
+    box-sizing: border-box;
+    overflow: hidden;
+    margin: 0;
+    /* Quitamos el margin-left viejo que descuadraba todo */
+
+    /* Estilo oscuro monocromático (como el resto del inventario) */
+    background: rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.02);
+}
+
+.required-item .item-slot-img {
+    width: 35px;
+    /* Imagen más pequeña y proporcionada */
+    height: 35px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 12px;
+    /* Espacio para la etiqueta de texto inferior */
+}
+
+.required-item .item-slot-img img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+    /* Sombra para que destaque sobre el negro */
+}
+
+.required-item .item-slot-label {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.05);
+    /* Banda inferior sutil */
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 4px;
+    box-sizing: border-box;
+}
+
+.required-item .item-slot-label p {
+    margin: 0;
+    font-size: 8px;
+    /* Texto ultra-compacto */
+    font-weight: 800;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* Puntos suspensivos si el nombre es kilométrico */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .context-menu {
     position: fixed;
-    background-color: var(--bg-color);
+    background-color: var(--bg-panel);
     border: 1px solid var(--border-color);
     z-index: 9999;
     width: 170px;
@@ -890,7 +931,7 @@ div {
     top: -1px;
     bottom: auto;
     width: 170px;
-    background-color: var(--bg-color);
+    background-color: var(--bg-panel);
     border: 1px solid var(--border-color);
     padding: 8px;
     box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.4);
@@ -1129,7 +1170,7 @@ div {
     color: #ffffff;
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    text-shadow: 0 2px 5px rgba(0, 0, 0, 0.9);
+    text-shadow: 0 2px 5px var(--bg-panel);
 }
 
 .modern-tooltip-weight {
@@ -1534,7 +1575,7 @@ div {
 }
 
 .tab-btn:hover {
-    background: var(--bg-hover);
+    background: rgba(255, 255, 255, 0.2);
     color: var(--primary-color);
 }
 
@@ -1761,7 +1802,7 @@ input {
     bottom: 2.8vh;
     display: flex;
     flex-direction: column;
-    background: rgba(0, 0, 0, 0.9);
+    background: var(--bg-panel);
     padding: 5px 0px 5px 5px;
     border-radius: 4px 0 0 4px;
     gap: 4px;
@@ -1904,7 +1945,7 @@ input {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.8);
+    background-color: var(--bg-panel);
     border: 1px solid rgba(255, 255, 255, 0.2);
     transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
@@ -1921,13 +1962,13 @@ input {
 }
 
 input:checked+.slider {
-    background-color: rgba(11, 128, 26, 0.5);
-    border-color: var(--success);
+    background-color: var(--primary);
+    border: 1px solid var(--bg-panel);
 }
 
 input:checked+.slider:before {
     transform: translateX(18px);
-    background-color: #fff;
+    background-color: var(--bg-panel);
     box-shadow: 0 0 5px rgba(255, 255, 255, 0.8);
 }
 
@@ -1957,7 +1998,7 @@ input:checked+.slider:before {
     background-color: var(--bg-panel);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 10px 40px var(--bg-panel);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -2029,7 +2070,7 @@ input:checked+.slider:before {
     align-items: center;
     padding: 25px;
     box-sizing: border-box;
-    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+    box-shadow: inset 0 0 20px var(--bg-panel);
 }
 
 .inspect-image {
@@ -2062,7 +2103,7 @@ input:checked+.slider:before {
     -webkit-appearance: none;
     width: 100%;
     height: 4px;
-    background: rgba(0, 0, 0, 0.8);
+    background: var(--bg-panel);
     border-radius: 2px;
     outline: none;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2076,7 +2117,7 @@ input:checked+.slider:before {
     border-radius: 50%;
     background: var(--primary-color);
     cursor: pointer;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 0 5px var(--bg-panel);
     transition: transform 0.1s ease;
 }
 
@@ -2087,7 +2128,7 @@ input:checked+.slider:before {
     border-radius: 50%;
     background: var(--primary-color);
     cursor: pointer;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 0 5px var(--bg-panel);
     transition: transform 0.1s ease;
     border: none;
 }
@@ -2286,7 +2327,7 @@ input:checked+.slider:before {
 }
 
 .key-badge {
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
+    box-shadow: inset 0 0 5px var(--bg-panel);
     background: rgb(34, 34, 34);
     color: rgb(200, 200, 200);
     padding: 1px 6px;
@@ -2297,7 +2338,7 @@ input:checked+.slider:before {
     min-width: 15px;
     text-align: center;
     border: 1px solid rgb(60, 60, 60);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    text-shadow: 0 1px 2px var(--bg-panel);
 }
 
 .custom-select-wrapper {
@@ -2345,7 +2386,7 @@ input:checked+.slider:before {
     background-color: rgba(0, 0, 0, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 3px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 5px 15px var(--bg-panel);
     overflow: hidden;
     display: flex;
     flex-direction: column;

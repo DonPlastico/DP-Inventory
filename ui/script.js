@@ -389,15 +389,17 @@ const InventoryContainer = Vue.createApp({
             let inventoryName = this.otherInventoryName;
             this.isInventoryReady = false;
 
-            // --- NUEVO: Guardar preferencias antes de purgar el estado ---
+            // Guardar preferencias y NOTIFICACIONES antes de purgar el estado
             let currentSoundState = this.uiSoundsEnabled;
             let currentMoveState = this.moveWhileOpen;
+            let currentNotifications = this.itemNotifications;
 
             Object.assign(this, this.getInitialState());
 
-            // --- NUEVO: Restaurar preferencias ---
+            // Restaurar preferencias y NOTIFICACIONES
             this.uiSoundsEnabled = currentSoundState;
             this.moveWhileOpen = currentMoveState;
+            this.itemNotifications = currentNotifications;
 
             try {
                 await axios.post("https://DP-Inventory/CloseInventory", { name: inventoryName });
@@ -2095,7 +2097,7 @@ const InventoryContainer = Vue.createApp({
 
         showItemNotification(itemData) {
             // Guardamos el tipo crudo (para la clase CSS) y el texto traducido
-            let rawAction = itemData.type; 
+            let rawAction = itemData.type;
             let translated = "ELIMINADO";
 
             if (rawAction === "add") translated = "RECIBIDO";
