@@ -149,12 +149,13 @@ DP-Inventory
 
 <h2 align="center"> 🎮 Controles por Defecto y Comandos</h2>
 <div align="center">
-  <b>[F2]</b> / <b>[TAB]</b> - Abrir/Cerrar el inventario (configurable). <br>
+  <b>[F2]</b> - Abrir/Cerrar el inventario (configurable). <br>
   <b>[J]</b> - Activar/Desactivar el Modo Cursor Libre (navega con WASD/Ratón mientras está abierto). <br>
   <b>[Z]</b> - Mostrar/Ocultar Cinturón visual (Hotbar). <br>
   <b>[1] al [5]</b> - Usar rápidamente los ítems de la Hotbar. <br>
-  <b>[Shift] + Click Izquierdo</b> - Dividir la cantidad del ítem a la mitad (Split). <br>
-  <b>[Click Derecho]</b> - Abrir menú contextual de opciones del ítem. <br>
+  <b>/giveitem</b> - (Solo Admin) Dar un ítem a un jugador. <br>
+  <b>/randomitems</b> - (Solo Admin) Dá ítems aleatorios a un jugador. <br>
+  <b>/clearinv</b> - (Solo Admin) Vacia el inventario de un jugador. <br>
   <b>/testreq</b> - (Solo Admin) Muestra el UI de ítems requeridos para desarrollo/tests. <br>
 </div>
 <br><br>

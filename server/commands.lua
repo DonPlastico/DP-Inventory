@@ -23,15 +23,15 @@
 --- Requiere permiso: admin
 ---
 --- Uso: /giveitem [id] [item] [amount]
-QBCore.Commands.Add('giveitem', 'Give An Item (Admin Only)', {{
+QBCore.Commands.Add('giveitem', 'Dar un ítem a un jugador', {{
     name = 'id',
-    help = 'Player ID'
+    help = 'Id del jugador'
 }, {
     name = 'item',
-    help = 'Name of the item (not a label)'
+    help = 'Nombre del ítem'
 }, {
     name = 'amount',
-    help = 'Amount of items'
+    help = 'Cantidad a dar'
 }}, false, function(source, args)
     local id = tonumber(args[1])
     local player = QBCore.Functions.GetPlayer(id)
@@ -104,7 +104,7 @@ end, 'admin')
 --- Uso: /randomitems
 local filteredRandomItems = nil -- Cache: se construye solo la primera vez
 
-QBCore.Commands.Add('randomitems', 'Receive random items', {}, false, function(source)
+QBCore.Commands.Add('randomitems', 'Recibe ítems aleatorios', {}, false, function(source)
     local player = QBCore.Functions.GetPlayer(source)
     if not player then
         return
@@ -120,30 +120,19 @@ QBCore.Commands.Add('randomitems', 'Receive random items', {}, false, function(s
         end
     end
 
-    local playerInventory = player.PlayerData.items
-
     for _ = 1, 10, 1 do
         local randitem = filteredRandomItems[math.random(1, #filteredRandomItems)]
         -- Ítems únicos siempre 1 unidad; resto entre 1 y 10
         local amount = randitem['unique'] and 1 or math.random(1, 10)
-        local emptySlot = nil
 
-        -- Buscamos el primer slot libre del jugador
-        for i = 1, Config.MaxSlots do
-            if not playerInventory[i] then
-                emptySlot = i
-                break
-            end
-        end
+        -- Pasamos 'nil' como slot para que AddItem se encargue de apilarlo o buscar un hueco libre real.
+        -- AddItem ya se encarga automáticamente de enviar la notificación visual (ItemBox).
+        AddItem(source, randitem.name, amount, nil, false, 'random items command')
+    end
 
-        if emptySlot then
-            if AddItem(source, randitem.name, amount, emptySlot, false, 'random items command') then
-                TriggerClientEvent('DP-Inventory:client:ItemBox', source, QBCore.Shared.Items[randitem.name], 'add')
-                if Player(source).state.inv_busy then
-                    TriggerClientEvent('DP-Inventory:client:updateInventory', source)
-                end
-            end
-        end
+    -- Si el jugador tiene el inventario abierto mientras tira el comando, lo actualizamos visualmente
+    if Player(source).state.inv_busy then
+        TriggerClientEvent('DP-Inventory:client:updateInventory', source)
     end
 end, 'god')
 
@@ -152,7 +141,7 @@ end, 'god')
 --- Requiere permiso: admin
 ---
 --- Uso: /clearinv [id]
-QBCore.Commands.Add('clearinv', 'Clear Inventory (Admin Only)', {{
+QBCore.Commands.Add('clearinv', 'Vaciar inventario', {{
     name = 'id',
     help = 'Player ID'
 }}, false, function(source, args)
@@ -168,39 +157,16 @@ end, 'admin')
 ---
 --- Uso: /testreq
 QBCore.Commands.Add('testreq', 'Probar UI de Items Requeridos (Test)', {}, false, function(source, args)
+    -- Usamos el formato EXACTO que usa QBCore internamente para los requiredItems
     local items = {
-        [1] = {
-            name = 'phone',
-            image = 'phone.png'
-        },
-        [2] = {
-            name = 'radio',
-            image = 'Jobs/radio.png'
-        },
-        [3] = {
-            name = 'id_card',
-            image = 'id_card.png'
-        },
-        [4] = {
-            name = 'lockpick',
-            image = 'Robos/lockpick.png'
-        },
-        [5] = {
-            name = 'thermite',
-            image = 'Robos/thermite.png'
-        },
-        [6] = {
-            name = 'laptop',
-            image = 'laptop.png'
-        },
-        [7] = {
-            name = 'armor',
-            image = 'Armas/armor.png'
-        },
-        [8] = {
-            name = 'weapon_pistol',
-            image = 'Armas/weapon_pistol.png'
-        }
+        ['phone'] = {name = 'phone', image = QBCore.Shared.Items['phone'].image},
+        ['radio'] = {name = 'radio', image = QBCore.Shared.Items['radio'].image},
+        ['id_card'] = {name = 'id_card', image = QBCore.Shared.Items['id_card'].image},
+        ['lockpick'] = {name = 'lockpick', image = QBCore.Shared.Items['lockpick'].image},
+        ['thermite'] = {name = 'thermite', image = QBCore.Shared.Items['thermite'].image},
+        ['laptop'] = {name = 'laptop', image = QBCore.Shared.Items['laptop'].image},
+        ['armor'] = {name = 'armor', image = QBCore.Shared.Items['armor'].image},
+        ['weapon_pistol'] = {name = 'weapon_pistol', image = QBCore.Shared.Items['weapon_pistol'].image}
     }
 
     -- Dispara el evento al cliente que ejecutó el comando
