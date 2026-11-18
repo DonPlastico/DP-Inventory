@@ -90,6 +90,23 @@ local Translations = {
     -- ──────────────────────────────────────────────
     interaction = {
         ['craft'] = '~g~E~w~ - Craft' -- Texto en pantalla para iniciar crafteo
+    },
+
+    -- ──────────────────────────────────────────────
+    --  SIM SYSTEM
+    --  Combine/extract errors and success messages.
+    -- ──────────────────────────────────────────────
+    sim = {
+        ['error_busy'] = 'Another operation is in progress. Please wait.',
+        ['error_invalid'] = 'Invalid action.',
+        ['error_not_combinable'] = 'These items cannot be combined.',
+        ['error_phone_no_imei'] = 'This phone has no IMEI.',
+        ['error_sim_not_activated'] = 'This SIM is not activated.',
+        ['error_phone_has_sim'] = 'This phone already has a SIM.',
+        ['error_sim_in_other_phone'] = 'This SIM is already inserted in another phone.',
+        ['error_phone_no_sim'] = 'This phone has no SIM.',
+        ['error_no_space'] = 'You have no space for the SIM.',
+        ['error_internal'] = 'An unexpected error occurred.'
     }
 }
 

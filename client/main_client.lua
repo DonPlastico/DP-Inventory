@@ -369,15 +369,45 @@ end)
 --- Fuerza una actualización de los ítems mostrados en la UI sin cerrar/abrir el inventario.
 --- Se usa tras un ClearInventory, drop de ítems, etc.
 RegisterNetEvent('DP-Inventory:client:updateInventory', function()
+    -- 1. Volvemos a leer los ítems reales del jugador (PlayerData se actualiza solo por QBCore)
     local items = {}
     if PlayerData and type(PlayerData.items) == "table" then
         items = PlayerData.items
     end
 
-    SendNUIMessage({
-        action = 'update',
-        inventory = items
-    })
+    -- 2. Buscamos los IMEI de los teléfonos para pedir el estado de la SIM
+    local imeisToCheck = {}
+    for _, item in pairs(items) do
+        if item and item.name == 'phone' and item.info and item.info.imei then
+            table.insert(imeisToCheck, item.info.imei)
+        end
+    end
+
+    -- 3. Pedimos al servidor el estado actualizado de las SIMs y enviamos a la UI
+    if #imeisToCheck > 0 then
+        QBCore.Functions.TriggerCallback('DP-Inventory:getSimStates', function(simStates)
+            if simStates then
+                for _, item in pairs(items) do
+                    if item and item.name == 'phone' and item.info and item.info.imei then
+                        local simNum = simStates[item.info.imei]
+                        item.hasSim = simNum ~= nil
+                        item.sim_number = simNum
+                    end
+                end
+            end
+
+            SendNUIMessage({
+                action = 'update',
+                inventory = items
+            })
+        end, imeisToCheck)
+    else
+        -- Si no hay teléfonos, enviamos el inventario normal
+        SendNUIMessage({
+            action = 'update',
+            inventory = items
+        })
+    end
 end)
 
 --- Muestra el aviso visual de ítem (añadido/eliminado/equipado/guardado) en la UI.
@@ -479,22 +509,69 @@ RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
     local _, dynamicWeight = GetPlayerDynamicCapacity() -- De backpack_cl.lua
     local dynamicSlots = Config.MaxSlots -- Slots siempre base fijo
 
-    SendNUIMessage({
-        action = 'open',
-        inventory = items,
-        slots = dynamicSlots,
-        maxweight = dynamicWeight,
-        other = other,
-        playerName = charName,
-        isDriver = isDriver,
-        inVehicle = inVeh,
-        vehicleSeat = mySeat,
-        vehData = vehData,
-        isAdmin = isPlayerAdmin,
-        invPosition = inventoryPosition,
-        moveWhileOpen = moveWhileOpen
-    })
-end)
+    -- ============================================================
+    --  PRECARGA DEL ESTADO DE LA SIM (Vía servidor, sin MySQL)
+    --  Pedimos al servidor los IMEI de los teléfonos que llevamos
+    --  y él nos devuelve qué SIM tiene cada uno.
+    -- ============================================================
+    local imeisToCheck = {}
+    if items then
+        for _, item in pairs(items) do
+            if item and item.name == 'phone' and item.info and item.info.imei then
+                table.insert(imeisToCheck, item.info.imei)
+            end
+        end
+    end
+
+    if #imeisToCheck > 0 then
+        QBCore.Functions.TriggerCallback('DP-Inventory:getSimStates', function(simStates)
+            if simStates then
+                -- Inyectamos los datos en los ítems
+                for _, item in pairs(items) do
+                    if item and item.name == 'phone' and item.info and item.info.imei then
+                        local simNum = simStates[item.info.imei]
+                        item.hasSim = simNum ~= nil
+                        item.sim_number = simNum
+                    end
+                end
+            end
+
+            -- Enviamos el inventario a la UI (ahora con los datos de SIM)
+            SendNUIMessage({
+                action = 'open',
+                inventory = items,
+                slots = dynamicSlots,
+                maxweight = dynamicWeight,
+                other = other,
+                playerName = charName,
+                isDriver = isDriver,
+                inVehicle = inVeh,
+                vehicleSeat = mySeat,
+                vehData = vehData,
+                isAdmin = isPlayerAdmin,
+                invPosition = inventoryPosition,
+                moveWhileOpen = moveWhileOpen
+            })
+        end, imeisToCheck)
+    else
+        -- Si no hay teléfonos, abrimos el inventario normal
+        SendNUIMessage({
+            action = 'open',
+            inventory = items,
+            slots = dynamicSlots,
+            maxweight = dynamicWeight,
+            other = other,
+            playerName = charName,
+            isDriver = isDriver,
+            inVehicle = inVeh,
+            vehicleSeat = mySeat,
+            vehData = vehData,
+            isAdmin = isPlayerAdmin,
+            invPosition = inventoryPosition,
+            moveWhileOpen = moveWhileOpen
+        })
+    end
+end) -- Fin de openInventory
 
 --- Reproduce la animación de dar/recibir un ítem a otro jugador.
 --- No se reproduce si el jugador está en un vehículo.
@@ -659,9 +736,11 @@ CreateThread(function()
         end
 
         -- 2. ANTI-EXPLOIT: Arma Fantasma (Dupe Visual/Combate)
-        -- Si el jugador tiene un arma en mano que ya no existe en su inventario, se la quitamos
         local currentWeaponHash = GetSelectedPedWeapon(ped)
-        if currentWeaponHash ~= joaat('WEAPON_UNARMED') and currentWeaponHash ~= 0 then
+        local isClosedSwitchblade = switchbladeState and switchbladeState.holding and not switchbladeState.deployed and
+                                        currentWeaponHash == joaat('WEAPON_KNUCKLE')
+
+        if currentWeaponHash ~= joaat('WEAPON_UNARMED') and currentWeaponHash ~= 0 and not isClosedSwitchblade then
             local hasWeaponItem = false
             local weaponName = nil
 
@@ -1910,6 +1989,199 @@ RegisterNetEvent('DP-Inventory:client:UpdateVehicleRadio', function(status)
         action = "updateVehicleRadio",
         status = status
     })
+end)
+
+-- ============================================================
+--  SISTEMA NAVAJA RETRÁCTIL (SWITCHBLADE - TECLA G)
+-- ============================================================
+switchbladeState = {
+    holding = false,
+    deployed = false,
+    prop = nil,
+    itemData = nil,
+    lastToggle = 0
+}
+
+local CLOSED_KNIFE_MODEL = joaat('prop_switchblade_closed')
+local HASH_UNARMED = joaat('WEAPON_UNARMED')
+local HASH_KNUCKLE = joaat('WEAPON_KNUCKLE')
+local HASH_SWITCHBLADE = joaat('WEAPON_SWITCHBLADE')
+
+local function DeleteSwitchbladeProp()
+    if switchbladeState.prop and DoesEntityExist(switchbladeState.prop) then
+        DeleteEntity(switchbladeState.prop)
+    end
+    switchbladeState.prop = nil
+end
+
+local function EquipClosedFist(ped)
+    GiveWeaponToPed(ped, HASH_KNUCKLE, 1, false, true)
+    SetCurrentPedWeapon(ped, HASH_KNUCKLE, true)
+    SetPedCurrentWeaponVisible(ped, false, false, false, false)
+end
+
+local function AttachClosedSwitchblade()
+    DeleteSwitchbladeProp()
+    local ped = PlayerPedId()
+    RequestModel(CLOSED_KNIFE_MODEL)
+    while not HasModelLoaded(CLOSED_KNIFE_MODEL) do
+        Wait(10)
+    end
+
+    local coords = GetEntityCoords(ped)
+    local prop = CreateObject(CLOSED_KNIFE_MODEL, coords.x, coords.y, coords.z, true, true, false)
+    -- Hueso 57005 = Mano derecha (PH_R_Hand)
+    AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, 57005), 0.12, 0.03, -0.02, 180.0, 90.0, 0.0, true, true, false,
+        true, 1, true)
+    SetModelAsNoLongerNeeded(CLOSED_KNIFE_MODEL)
+    switchbladeState.prop = prop
+end
+
+local function HolsterSwitchblade()
+    local ped = PlayerPedId()
+    DeleteSwitchbladeProp()
+    RemoveWeaponFromPed(ped, HASH_KNUCKLE)
+    RemoveWeaponFromPed(ped, HASH_SWITCHBLADE)
+    SetPedCurrentWeaponVisible(ped, true, false, false, false)
+    SetCurrentPedWeapon(ped, HASH_UNARMED, true)
+    switchbladeState.holding = false
+    switchbladeState.deployed = false
+    switchbladeState.itemData = nil
+end
+
+--- Evento disparado desde server/main_server.lua al usar weapon_switchblade
+RegisterNetEvent('DP-Inventory:client:ToggleSwitchblade', function(itemData)
+    local ped = PlayerPedId()
+
+    if switchbladeState.holding then
+        HolsterSwitchblade()
+        QBCore.Functions.Notify('Has guardado la navaja.', 'primary', 2000)
+        return
+    end
+
+    -- Sale CERRADA en el puño cerrado (pega puñetazos)
+    switchbladeState.lastToggle = GetGameTimer()
+    switchbladeState.holding = true
+    switchbladeState.deployed = false
+    switchbladeState.itemData = itemData
+    EquipClosedFist(ped)
+    AttachClosedSwitchblade()
+    QBCore.Functions.Notify('Navaja en mano (cerrada). Pulsa [G] para sacar la hoja.', 'primary', 3000)
+end)
+
+--- Comando y tecla G para desplegar / recoger la hoja
+RegisterCommand('toggleSwitchblade', function()
+    if not switchbladeState.holding then
+        return
+    end
+    if isInventoryOpen or IsPauseMenuActive() then
+        return
+    end
+
+    local ped = PlayerPedId()
+    if IsPedInAnyVehicle(ped, false) then
+        return
+    end
+
+    switchbladeState.lastToggle = GetGameTimer()
+
+    if not switchbladeState.deployed then
+        -- DESPLEGAR HOJA
+        DeleteSwitchbladeProp()
+        RemoveWeaponFromPed(ped, HASH_KNUCKLE)
+        SetPedCurrentWeaponVisible(ped, true, false, false, false)
+        switchbladeState.deployed = true
+        TriggerEvent('qb-weapons:client:UseWeapon', switchbladeState.itemData, true)
+        QBCore.Functions.Notify('Hoja desplegada.', 'success', 1500)
+    else
+        -- RECOGER HOJA (vuelve a puño cerrado con prop en mano)
+        switchbladeState.deployed = false
+        RemoveWeaponFromPed(ped, HASH_SWITCHBLADE)
+        EquipClosedFist(ped)
+        AttachClosedSwitchblade()
+        QBCore.Functions.Notify('Hoja recogida.', 'primary', 1500)
+    end
+end, false)
+
+RegisterKeyMapping('toggleSwitchblade', 'Desplegar/Recoger hoja de navaja', 'keyboard', 'G')
+
+-- Comando temporal para ajustar posición y rotación de la navaja cerrada
+-- Uso: /navajapos x y z rx ry rz
+RegisterCommand('navajapos', function(_, args)
+    if not switchbladeState.prop or not DoesEntityExist(switchbladeState.prop) then
+        return QBCore.Functions.Notify('Saca la navaja cerrada primero.', 'error')
+    end
+
+    local x = tonumber(args[1]) or 0.12
+    local y = tonumber(args[2]) or 0.03
+    local z = tonumber(args[3]) or -0.02
+    local rx = tonumber(args[4]) or 180.0
+    local ry = tonumber(args[5]) or 90.0
+    local rz = tonumber(args[6]) or 0.0
+
+    local ped = PlayerPedId()
+    AttachEntityToEntity(switchbladeState.prop, ped, GetPedBoneIndex(ped, 57005), x, y, z, rx, ry, rz, true, true,
+        false, true, 1, true)
+
+    -- Imprime la línea lista para copiar en F8
+    print(string.format(
+        "AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, 57005), %.3f, %.3f, %.3f, %.1f, %.1f, %.1f, true, true, false, true, 1, true)",
+        x, y, z, rx, ry, rz))
+end, false)
+
+--- Vigilante: mantiene oculta la nudillera y limpia solo si cambia a OTRA arma, muere o la pierde
+CreateThread(function()
+    while true do
+        Wait(500)
+        if switchbladeState.holding and (GetGameTimer() - switchbladeState.lastToggle > 1000) then
+            local ped = PlayerPedId()
+            local currentWeap = GetSelectedPedWeapon(ped)
+
+            if not HasItem('weapon_switchblade', 1) or IsEntityDead(ped) then
+                HolsterSwitchblade()
+            elseif not switchbladeState.deployed then
+                if currentWeap == HASH_KNUCKLE then
+                    SetPedCurrentWeaponVisible(ped, false, false, false, false)
+                elseif currentWeap ~= HASH_UNARMED then
+                    -- Solo guardamos si saca otra arma distinta (pistola, bate, etc.)
+                    HolsterSwitchblade()
+                end
+            elseif switchbladeState.deployed and currentWeap ~= HASH_SWITCHBLADE and currentWeap ~= HASH_UNARMED then
+                HolsterSwitchblade()
+            end
+        end
+    end
+end)
+
+--- Limpieza instantánea si el recurso se detiene desde consola (evita props huérfanos y crasheos)
+AddEventHandler('onResourceStop', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+    if switchbladeState and switchbladeState.holding then
+        local ped = PlayerPedId()
+        if switchbladeState.prop and DoesEntityExist(switchbladeState.prop) then
+            DetachEntity(switchbladeState.prop, true, true)
+            SetEntityAsMissionEntity(switchbladeState.prop, true, true)
+            DeleteEntity(switchbladeState.prop)
+        end
+        RemoveWeaponFromPed(ped, HASH_KNUCKLE)
+        RemoveWeaponFromPed(ped, HASH_SWITCHBLADE)
+        SetPedCurrentWeaponVisible(ped, true, false, false, false)
+        SetCurrentPedWeapon(ped, HASH_UNARMED, true)
+    end
+end)
+
+--- Evento para guardar la navaja con animación antes de un reinicio seguro
+RegisterNetEvent('DP-Inventory:client:SafeHolsterBeforeRestart', function()
+    if switchbladeState and switchbladeState.holding then
+        local ped = PlayerPedId()
+        HolsterSwitchblade()
+        if not IsPedInAnyVehicle(ped, false) then
+            LoadAnimDict('reaction@intimidation@1h')
+            TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 1.0, 900, 48, 0, false, false, false)
+        end
+    end
 end)
 
 -- ============================================================

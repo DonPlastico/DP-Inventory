@@ -17,7 +17,8 @@ client_scripts {
     'client/drops.lua',
     'client/vehicles.lua',
     'client/backitems.lua',
-    'client/backpack_cl.lua'
+    'client/backpack_cl.lua',
+    'client/sim.lua'
 }
 
 server_scripts {
@@ -25,7 +26,8 @@ server_scripts {
     'server/main_server.lua',
     'server/functions.lua',
     'server/commands.lua',
-    'server/backpack_sv.lua'
+    'server/backpack_sv.lua',
+    'server/sim.lua'
 }
 
 ui_page 'ui/index.html'

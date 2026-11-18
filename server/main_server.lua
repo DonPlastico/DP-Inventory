@@ -358,10 +358,15 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
     local itemInfo = QBCore.Shared.Items[itemData.name]
 
     if itemData.type == 'weapon' then
-        -- Las armas se equipa/desequipan via qb-weapons; la comprobación visual es instantánea en cliente
-        TriggerClientEvent('qb-weapons:client:UseWeapon', src, itemData,
-            itemData.info.quality and itemData.info.quality > 0)
-        TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
+        if itemData.name == 'weapon_switchblade' then
+            TriggerClientEvent('DP-Inventory:client:ToggleSwitchblade', src, itemData)
+            TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
+        else
+            -- Las armas se equipan/desequipan via qb-weapons; la comprobación visual es instantánea en cliente
+            TriggerClientEvent('qb-weapons:client:UseWeapon', src, itemData,
+                itemData.info.quality and itemData.info.quality > 0)
+            TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
+        end
 
     elseif itemData.name == 'id_card' then
         UseItem(itemData.name, src, itemData)
@@ -625,6 +630,31 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:giveItem', function(source,
     -- Comprobación de proximidad (máx 5m)
     if #(GetEntityCoords(GetPlayerPed(src)) - GetEntityCoords(GetPlayerPed(target))) > 5 then
         return cb(false)
+    end
+
+    -- ============================================================
+    --  AUTO-ACTIVAR SIMS VÍRGENES AL DARLAS
+    --  Si un admin da una sim_card sin número, le generamos uno.
+    -- ============================================================
+    if item == 'sim_card' then
+        if not info then
+            info = {}
+        end
+        if not info.sim_number then
+            local newNumber
+            local exists = true
+            while exists do
+                newNumber = string.format("%03d-%04d-%03d", math.random(100, 999), math.random(1000, 9999),
+                    math.random(100, 999))
+                local found = MySQL.scalar.await('SELECT 1 FROM dp_phone_sim WHERE sim_number = ?', {newNumber})
+                if not found then
+                    exists = false
+                end
+            end
+            MySQL.insert.await('INSERT IGNORE INTO dp_phone_sim (sim_number, activated) VALUES (?, 0)', {newNumber})
+            info.sim_number = newNumber
+            print("^2[DP-Inventory]^7 SIM activada automáticamente: " .. newNumber)
+        end
     end
 
     local itemInfo = QBCore.Shared.Items[item:lower()]

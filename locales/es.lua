@@ -64,6 +64,23 @@ local Translations = {
     -- Textos de interacción en pantalla (formato nativo GTA: ~color~)
     interaction = {
         ['craft'] = '~g~E~w~ - Fabricar'
+    },
+
+    -- ──────────────────────────────────────────────
+    --  SISTEMA DE SIM
+    --  Errores y mensajes de combinar/extraer SIM.
+    -- ──────────────────────────────────────────────
+    sim = {
+        ['error_busy'] = 'Hay otra operación en curso. Espera un momento.',
+        ['error_invalid'] = 'Acción inválida.',
+        ['error_not_combinable'] = 'Estos ítems no se pueden combinar.',
+        ['error_phone_no_imei'] = 'Este teléfono no tiene IMEI.',
+        ['error_sim_not_activated'] = 'Esta SIM no está activada.',
+        ['error_phone_has_sim'] = 'Este teléfono ya tiene una SIM.',
+        ['error_sim_in_other_phone'] = 'Esta SIM ya está insertada en otro teléfono.',
+        ['error_phone_no_sim'] = 'Este teléfono no tiene SIM.',
+        ['error_no_space'] = 'No tienes espacio para la SIM.',
+        ['error_internal'] = 'Ha ocurrido un error inesperado.'
     }
 }
 

@@ -97,5 +97,18 @@ Config = {
         name = 'water_bottle',
         price = 4,
         amount = 50
-    }}
+    }},
+
+    -- ──────────────────────────────────────────────────────
+    --  SISTEMA DE SIM (DP-Inventory ↔ DP-Phone)
+    --  Combina/extrae el ítem 'sim_card' de un 'phone'.
+    --  Los nombres de los items NO se configuran aquí:
+    --  se usan tal cual de items.lua (QBShared).
+    -- ──────────────────────────────────────────────────────
+    Sim = {
+        enableLog = true, -- guarda cada acción en dp_phone_sim_log
+        pendingTimeoutMs = 15000, -- tiempo máximo esperando el segundo clic al combinar
+        actionCooldownMs = 1500, -- mínimo entre dos acciones del mismo jugador
+        debug = false -- prints de depuración
+    }
 }
