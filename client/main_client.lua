@@ -433,6 +433,9 @@ RegisterNetEvent('DP-Inventory:client:ItemBox', ShowItemBox)
 --- - Arma en mano == arma clickeada  → la estamos GUARDANDO ('holster')
 --- - Desarmado o arma diferente      → la estamos EQUIPANDO ('equip')
 RegisterNetEvent('DP-Inventory:client:WeaponItemBox', function(itemInfo)
+    if itemInfo and itemInfo.name == 'weapon_switchblade' then
+        return -- El aviso de la navaja se gestiona en ToggleSwitchblade
+    end
     local ped = PlayerPedId()
     local currentWeapon = GetSelectedPedWeapon(ped)
     local itemHash = joaat(itemInfo.name)
@@ -2030,43 +2033,109 @@ local function AttachClosedSwitchblade()
 
     local coords = GetEntityCoords(ped)
     local prop = CreateObject(CLOSED_KNIFE_MODEL, coords.x, coords.y, coords.z, true, true, false)
-    -- Hueso 57005 = Mano derecha (PH_R_Hand)
-    AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, 57005), 0.12, 0.03, -0.02, 180.0, 90.0, 0.0, true, true, false,
-        true, 1, true)
+    AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, 57005), 0.090, -0.010, -0.020, 290.0, 20.0, 0.0, true, true,
+        false, true, 1, true)
     SetModelAsNoLongerNeeded(CLOSED_KNIFE_MODEL)
     switchbladeState.prop = prop
 end
 
-local function HolsterSwitchblade()
+local function HolsterSwitchblade(keepCurrentWeapon)
     local ped = PlayerPedId()
     DeleteSwitchbladeProp()
     RemoveWeaponFromPed(ped, HASH_KNUCKLE)
     RemoveWeaponFromPed(ped, HASH_SWITCHBLADE)
     SetPedCurrentWeaponVisible(ped, true, false, false, false)
-    SetCurrentPedWeapon(ped, HASH_UNARMED, true)
+    if not keepCurrentWeapon then
+        SetCurrentPedWeapon(ped, HASH_UNARMED, true)
+    end
     switchbladeState.holding = false
     switchbladeState.deployed = false
     switchbladeState.itemData = nil
 end
 
+local isTogglingSwitchblade = false
+
 --- Evento disparado desde server/main_server.lua al usar weapon_switchblade
 RegisterNetEvent('DP-Inventory:client:ToggleSwitchblade', function(itemData)
+    if isTogglingSwitchblade then
+        return
+    end
+    isTogglingSwitchblade = true
+
     local ped = PlayerPedId()
+    local inVeh = IsPedInAnyVehicle(ped, false)
+    local itemInfo = QBCore.Shared.Items['weapon_switchblade']
 
     if switchbladeState.holding then
-        HolsterSwitchblade()
+        -- GUARDAR NAVAJA CON ANIMACIÓN
+        if not inVeh then
+            LoadAnimDict('reaction@intimidation@1h')
+            TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 3.0, 1000, 48, 0, false, false, false)
+            Wait(450)
+        end
+        HolsterSwitchblade(false)
+        if itemInfo then
+            ShowItemBox(itemInfo, 'holster', 1)
+        end
         QBCore.Functions.Notify('Has guardado la navaja.', 'primary', 2000)
+        isTogglingSwitchblade = false
         return
     end
 
-    -- Sale CERRADA en el puño cerrado (pega puñetazos)
+    -- SI LLEVA OTRA ARMA EN MANO: la guardamos primero para que weapdraw.lua no nos pise la navaja
+    local currentWeap = GetSelectedPedWeapon(ped)
+    if currentWeap ~= HASH_UNARMED and currentWeap ~= 0 and currentWeap ~= HASH_KNUCKLE then
+        -- Buscamos el nombre del arma anterior para limpiar qb-weapons (cl_main.lua)
+        local prevWeaponName = nil
+        if QBCore.Shared.Weapons then
+            for _, v in pairs(QBCore.Shared.Weapons) do
+                if v.hash == currentWeap or joaat(v.name) == currentWeap then
+                    prevWeaponName = v.name
+                    break
+                end
+            end
+        end
+
+        if not inVeh then
+            LoadAnimDict('reaction@intimidation@1h')
+            TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 3.0, 1000, 48, 0, false, false, false)
+            Wait(500)
+        end
+
+        -- Reseteamos weapdraw.lua y qb-weapons ANTES de equipar la navaja
+        TriggerEvent('qb-weapons:ResetHolster')
+        if prevWeaponName then
+            TriggerEvent('qb-weapons:client:CheckWeapon', prevWeaponName)
+        else
+            SetCurrentPedWeapon(ped, HASH_UNARMED, true)
+            RemoveAllPedWeapons(ped, true)
+        end
+        Wait(150)
+    end
+
+    -- SACAR NAVAJA CERRADA CON ANIMACIÓN
     switchbladeState.lastToggle = GetGameTimer()
     switchbladeState.holding = true
     switchbladeState.deployed = false
     switchbladeState.itemData = itemData
-    EquipClosedFist(ped)
-    AttachClosedSwitchblade()
-    QBCore.Functions.Notify('Navaja en mano (cerrada). Pulsa [G] para sacar la hoja.', 'primary', 3000)
+
+    if not inVeh then
+        LoadAnimDict('reaction@intimidation@1h')
+        TaskPlayAnim(ped, 'reaction@intimidation@1h', 'intro', 8.0, 3.0, 1200, 48, 0, false, false, false)
+        Wait(450)
+    end
+
+    if switchbladeState.holding and not IsEntityDead(ped) then
+        switchbladeState.lastToggle = GetGameTimer()
+        EquipClosedFist(ped)
+        AttachClosedSwitchblade()
+        if itemInfo then
+            ShowItemBox(itemInfo, 'equip', 1)
+        end
+        QBCore.Functions.Notify('Navaja en mano (cerrada). Pulsa [G] para sacar la hoja.', 'primary', 3000)
+    end
+
+    isTogglingSwitchblade = false
 end)
 
 --- Comando y tecla G para desplegar / recoger la hoja
@@ -2105,30 +2174,6 @@ end, false)
 
 RegisterKeyMapping('toggleSwitchblade', 'Desplegar/Recoger hoja de navaja', 'keyboard', 'G')
 
--- Comando temporal para ajustar posición y rotación de la navaja cerrada
--- Uso: /navajapos x y z rx ry rz
-RegisterCommand('navajapos', function(_, args)
-    if not switchbladeState.prop or not DoesEntityExist(switchbladeState.prop) then
-        return QBCore.Functions.Notify('Saca la navaja cerrada primero.', 'error')
-    end
-
-    local x = tonumber(args[1]) or 0.12
-    local y = tonumber(args[2]) or 0.03
-    local z = tonumber(args[3]) or -0.02
-    local rx = tonumber(args[4]) or 180.0
-    local ry = tonumber(args[5]) or 90.0
-    local rz = tonumber(args[6]) or 0.0
-
-    local ped = PlayerPedId()
-    AttachEntityToEntity(switchbladeState.prop, ped, GetPedBoneIndex(ped, 57005), x, y, z, rx, ry, rz, true, true,
-        false, true, 1, true)
-
-    -- Imprime la línea lista para copiar en F8
-    print(string.format(
-        "AttachEntityToEntity(prop, ped, GetPedBoneIndex(ped, 57005), %.3f, %.3f, %.3f, %.1f, %.1f, %.1f, true, true, false, true, 1, true)",
-        x, y, z, rx, ry, rz))
-end, false)
-
 --- Vigilante: mantiene oculta la nudillera y limpia solo si cambia a OTRA arma, muere o la pierde
 CreateThread(function()
     while true do
@@ -2138,22 +2183,23 @@ CreateThread(function()
             local currentWeap = GetSelectedPedWeapon(ped)
 
             if not HasItem('weapon_switchblade', 1) or IsEntityDead(ped) then
-                HolsterSwitchblade()
+                HolsterSwitchblade(false)
             elseif not switchbladeState.deployed then
                 if currentWeap == HASH_KNUCKLE then
                     SetPedCurrentWeaponVisible(ped, false, false, false, false)
                 elseif currentWeap ~= HASH_UNARMED then
-                    -- Solo guardamos si saca otra arma distinta (pistola, bate, etc.)
-                    HolsterSwitchblade()
+                    -- Cambió a otra arma: limpiamos la navaja sin quitarle el arma nueva
+                    HolsterSwitchblade(true)
                 end
             elseif switchbladeState.deployed and currentWeap ~= HASH_SWITCHBLADE and currentWeap ~= HASH_UNARMED then
-                HolsterSwitchblade()
+                -- Cambió a otra arma con la hoja abierta: limpiamos sin quitarle el arma nueva
+                HolsterSwitchblade(true)
             end
         end
     end
 end)
 
---- Limpieza instantánea si el recurso se detiene desde consola (evita props huérfanos y crasheos)
+--- Limpieza instantánea si el recurso se detiene desde consola (evita props huérfanos)
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then
         return
@@ -2169,18 +2215,6 @@ AddEventHandler('onResourceStop', function(resourceName)
         RemoveWeaponFromPed(ped, HASH_SWITCHBLADE)
         SetPedCurrentWeaponVisible(ped, true, false, false, false)
         SetCurrentPedWeapon(ped, HASH_UNARMED, true)
-    end
-end)
-
---- Evento para guardar la navaja con animación antes de un reinicio seguro
-RegisterNetEvent('DP-Inventory:client:SafeHolsterBeforeRestart', function()
-    if switchbladeState and switchbladeState.holding then
-        local ped = PlayerPedId()
-        HolsterSwitchblade()
-        if not IsPedInAnyVehicle(ped, false) then
-            LoadAnimDict('reaction@intimidation@1h')
-            TaskPlayAnim(ped, 'reaction@intimidation@1h', 'outro', 8.0, 1.0, 900, 48, 0, false, false, false)
-        end
     end
 end)
 

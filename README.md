@@ -123,6 +123,7 @@ DP-Inventory
 │   ├── 📄 backpack_cl.lua (Sincronización visual de chalecos y mochilas en ped)
 │   ├── 📄 drops.lua (Gestión de props físicos y objetos en el suelo)
 │   ├── 📄 main_client.lua (Núcleo del cliente, callbacks, acciones y NUI)
+│   ├── 📄 sim_cl.lua (Tarjeta sim, objeto para DP-Phone)
 │   └── 📄 vehicles.lua (Cálculos de clase para maleteros/guanteras y animaciones)
 ├── 📁 config
 │   ├── 📄 backitems.lua
@@ -135,8 +136,19 @@ DP-Inventory
 │   ├── 📄 commands.lua (Comandos admin /testreq, /giveitem con metadatos)
 │   ├── 📄 functions.lua (Funciones base CRUD O(1), metadatos, validaciones)
 │   └── 📄 main_server.lua (Núcleo del servidor, callbacks, persistencia SQL, preferencias)
+│   ├── 📄 sim_sv.lua (Tarjeta sim, objeto para DP-Phone)
 ├── 📁 ui
 │   ├── 📁 images (Más de 7.000 imágenes de ítems)
+│   │   ├── 📁 Armas
+│   │   ├── 📁 Bebidas
+│   │   ├── 📁 Caza-Pesca
+│   │   ├── 📁 Coleccionables
+│   │   ├── 📁 Comida
+│   │   ├── 📁 Droga
+│   │   ├── 📁 Granja
+│   │   ├── 📁 Jobs
+│   │   └── 📁 Robos
+│   ├── 📁 sounds (Localización de todos los sonidos .mp3)
 │   ├── 🌐 index.html (Estructura base y Vue.js template)
 │   ├── 📄 script.js (Lógica Vue.js, Axios, Drag&Drop)
 │   └── 🎨 style.css (Estilos, Grid, animaciones, variables de color)
