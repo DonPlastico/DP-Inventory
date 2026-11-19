@@ -119,24 +119,29 @@ Todo el backend ha sido reescrito para eliminar los temidos <i>dupes</i> (duplic
 <pre>
 DP-Inventory
 ├── 📁 client
-│   ├── 📄 backitems.lua (Lógica de armas/objetos a la espalda visuales)
+│   ├── 📄 backitems_cl.lua (Lógica de armas/objetos a la espalda visuales)
 │   ├── 📄 backpack_cl.lua (Sincronización visual de chalecos y mochilas en ped)
-│   ├── 📄 drops.lua (Gestión de props físicos y objetos en el suelo)
-│   ├── 📄 main_client.lua (Núcleo del cliente, callbacks, acciones y NUI)
+│   ├── 📄 drops_cl.lua (Gestión de props físicos y objetos en el suelo)
+│   ├── 📄 main_cl.lua (Núcleo del cliente, callbacks, acciones y NUI)
 │   ├── 📄 sim_cl.lua (Tarjeta sim, objeto para DP-Phone)
-│   └── 📄 vehicles.lua (Cálculos de clase para maleteros/guanteras y animaciones)
+│   ├── 📄 vehicles_cl.lua (Cálculos de clase para maleteros/guanteras y animaciones)
+│   ├── 📄 weapons_cl.lua (client del qb-weapons)
+│   ├── 📄 weaponsdraw_cl.lua (client del qb-weapons)
+│   └── 📄 weaponsrecoil_cl.lua (client del qb-weapons)
 ├── 📁 config
 │   ├── 📄 backitems.lua
 │   ├── 📄 config.lua
-│   └── 📄 vehicles.lua
+│   ├── 📄 vehicles.lua
+│   └── 📄 weapons.lua (config del qb-weapons)
 ├── 📁 locales
 │   └── 📄 cs.lua, de.lua, en.lua, es.lua, nl.lua
 ├── 📁 server
 │   ├── 📄 backpack_sv.lua (Cálculo de penalización de peso y desbordamiento de ítems)
-│   ├── 📄 commands.lua (Comandos admin /testreq, /giveitem con metadatos)
-│   ├── 📄 functions.lua (Funciones base CRUD O(1), metadatos, validaciones)
-│   └── 📄 main_server.lua (Núcleo del servidor, callbacks, persistencia SQL, preferencias)
+│   ├── 📄 commands_sv.lua (Comandos admin /testreq, /giveitem con metadatos)
+│   ├── 📄 functions_sv.lua (Funciones base CRUD O(1), metadatos, validaciones)
+│   ├── 📄 main_sv.lua (Núcleo del servidor, callbacks, persistencia SQL, preferencias)
 │   ├── 📄 sim_sv.lua (Tarjeta sim, objeto para DP-Phone)
+│   └── 📄 weapons_sv.lua (server del qb-weapons)
 ├── 📁 ui
 │   ├── 📁 images (Más de 7.000 imágenes de ítems)
 │   │   ├── 📁 Armas
@@ -152,6 +157,7 @@ DP-Inventory
 │   ├── 🌐 index.html (Estructura base y Vue.js template)
 │   ├── 📄 script.js (Lógica Vue.js, Axios, Drag&Drop)
 │   └── 🎨 style.css (Estilos, Grid, animaciones, variables de color)
+├── 📄 dp_weapons.meta (el meta del qb-weapons)
 ├── 📄 DP-Inventory.sql
 ├── 📝 README.md
 ├── 📄 fxmanifest.lua
@@ -181,7 +187,6 @@ DP-Inventory
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | <img src="https://placehold.co/20x20/555555/FFFFFF?text=FW" alt="FW"> **QB-Core**   | 🔴 OBLIGATORIO                                                       |
 | <img src="https://placehold.co/20x20/555555/FFFFFF?text=SQL" alt="SQL"> **oxmysql** | 🔴 OBLIGATORIO                                                       |
-| <img src="https://placehold.co/20x20/555555/FFFFFF?text=W" alt="W"> **qb-weapons**  | 🔴 OBLIGATORIO (Para sistema de accesorios)                          |
 | <img src="https://placehold.co/20x20/555555/FFFFFF?text=DP" alt="DP"> **DP-TextUI** | 🔴 OBLIGATORIO (Para los botones de interación con las bolsas/items) |
 
 </details>

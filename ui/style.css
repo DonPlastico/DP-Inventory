@@ -90,16 +90,19 @@ div {
 }
 
 .inventory-container {
-    height: 100%;
-    width: 100%;
+    height: 100vh;
+    max-height: 100vh;
+    width: 100vw;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
     align-items: flex-end;
-    padding-bottom: 35px;
+    padding-top: 5px;
+    padding-bottom: 5px;
     padding-right: 5px;
     gap: 5px;
     box-sizing: border-box;
+    overflow: hidden;
     transition: opacity 0.2s ease-in-out;
 }
 
@@ -112,11 +115,14 @@ div {
     position: relative;
     width: 20vw;
     height: auto;
+    max-height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
     padding: 5px;
     border-radius: 4px;
+    box-sizing: border-box;
 }
 
 .player-inventory-section,
@@ -130,12 +136,13 @@ div {
 }
 
 .player-inventory-section {
-    border-radius: 0 4px 4px 4px;
+    border-radius: 0 4px 4px 0;
+    flex: 0 1 auto;
 }
 
 .other-inventory-section {
     animation: slideUpOther 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-    max-height: 30vh;
+    flex: 0 2 auto;
 }
 
 .inventory-header {
@@ -200,7 +207,8 @@ div {
 }
 
 .inventory-grid {
-    flex-grow: 1;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
 }
@@ -282,6 +290,77 @@ div {
 .weight-icon-btn iconify-icon,
 .tab-btn {
     font-size: 15px;
+}
+
+/* =========================================
+   BUSCADOR DESPLEGABLE (ANCHO COMPLETO)
+   ========================================= */
+.weight-icon-btn.search-btn-active {
+    background-color: var(--primary-color);
+    color: var(--bg-panel);
+    border-color: var(--primary-color);
+}
+
+.dropdown-search-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-bottom: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease, margin-bottom 0.25s ease;
+}
+
+.dropdown-search-row.open {
+    max-height: 3.2vh;
+    height: 3.2vh;
+    opacity: 1;
+    margin-bottom: 10px;
+}
+
+.dropdown-search-bar {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.dropdown-search-icon {
+    font-size: 1.5vh;
+    color: rgba(255, 255, 255, 0.45);
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
+.dropdown-search-bar input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #ffffff;
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.1vh;
+}
+
+.dropdown-search-bar input::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+    font-style: italic;
+}
+
+.dropdown-search-close-btn {
+    width: 3.2vh;
+    height: 3.2vh;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 .inventory-label p {
@@ -843,6 +922,10 @@ div {
 }
 
 .context-menu.menu-top {
+    transform: translateY(-100%);
+}
+
+.context-menu.menu-left.menu-top {
     transform: translate(-100%, -100%);
 }
 
@@ -1539,13 +1622,17 @@ div {
 .tab-content-wrapper {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     width: 100%;
 }
 
 .tab-content-animator {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
     width: 100%;
-    height: auto;
     position: relative;
     overflow: hidden;
 }
@@ -1800,11 +1887,11 @@ input {
 .equipment-sidebar {
     position: absolute;
     left: -7vh;
-    bottom: 2.8vh;
+    bottom: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
-    padding: 5px 0px 5px 5px;
+    padding: 5px 0px 15px 5px;
     border-radius: 4px 0 0 4px;
     gap: 4px;
     z-index: 10;
@@ -1832,7 +1919,6 @@ input {
 
 .clothing-action-pane {
     flex: 1;
-    overflow-y: auto;
     padding: 5px 5px 0 5px;
 }
 
@@ -2283,7 +2369,7 @@ input:checked+.slider:before {
 }
 
 .menu-footer {
-    height: 35px;
+    height: 15px;
     flex-shrink: 0;
     display: flex;
     justify-content: center;
@@ -2691,14 +2777,36 @@ input:checked+.slider:before {
     z-index: 5;
 }
 
-@keyframes simPulse {
-    from {
-        box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.2);
-    }
+/* =========================================
+   PLACEHOLDER: ÍTEM SIN IMAGEN
+   ========================================= */
+.missing-img-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    pointer-events: none;
+    user-select: none;
+    color: rgba(255, 255, 255, 0.45);
+}
 
-    to {
-        box-shadow: 0 0 20px 8px rgba(255, 255, 255, 0.8);
-    }
+.missing-img-icon {
+    font-size: 2.6vh;
+    color: rgba(255, 255, 255, 0.4);
+    animation: missingIconBounce 1.4s ease-in-out infinite;
+}
+
+.missing-img-placeholder span {
+    font-size: 0.78vh;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.35);
 }
 
 
@@ -2746,7 +2854,15 @@ input:checked+.slider:before {
 
 
 
+@keyframes simPulse {
+    from {
+        box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.2);
+    }
 
+    to {
+        box-shadow: 0 0 20px 8px rgba(255, 255, 255, 0.8);
+    }
+}
 
 @keyframes slideUpOther {
     0% {
@@ -2833,5 +2949,17 @@ input:checked+.slider:before {
     to {
         opacity: 1;
         transform: scale(1);
+    }
+}
+
+@keyframes missingIconBounce {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-5px);
     }
 }

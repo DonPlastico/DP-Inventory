@@ -1,11 +1,5 @@
 -- ============================================================
 --  DP-INVENTORY · locales/es.lua  –  Español
---
---  Para activar este idioma en el servidor:
---    setr qb_locale "es"   → en server.cfg
---
---  Si una clave no existe aquí, se usa automáticamente
---  la traducción del fallback (en.lua).
 -- ============================================================
 local Translations = {
 
@@ -31,8 +25,8 @@ local Translations = {
         ['tftgitem'] = '¡Estás demasiado lejos para dar objetos!',
         ['infound'] = '¡Objeto que intentaste dar no encontrado!',
         ['iifound'] = '¡Objeto incorrecto encontrado, intenta de nuevo!',
-        ['gitemrec'] = 'Recibiste ', -- Prefijo: "Recibiste 2x water_bottle"
-        ['gitemfrom'] = ' De ', -- Sufijo:  "Recibiste X De NombreJugador"
+        ['gitemrec'] = 'Recibiste ',
+        ['gitemfrom'] = ' De ',
         ['gitemyg'] = 'Diste ',
         ['gitinvfull'] = '¡El inventario del otro jugador está lleno!',
         ['giymif'] = '¡Tu inventario está lleno!',
@@ -66,10 +60,7 @@ local Translations = {
         ['craft'] = '~g~E~w~ - Fabricar'
     },
 
-    -- ──────────────────────────────────────────────
-    --  SISTEMA DE SIM
-    --  Errores y mensajes de combinar/extraer SIM.
-    -- ──────────────────────────────────────────────
+    -- Sistema de SIM
     sim = {
         ['error_busy'] = 'Hay otra operación en curso. Espera un momento.',
         ['error_invalid'] = 'Acción inválida.',
@@ -81,6 +72,37 @@ local Translations = {
         ['error_phone_no_sim'] = 'Este teléfono no tiene SIM.',
         ['error_no_space'] = 'No tienes espacio para la SIM.',
         ['error_internal'] = 'Ha ocurrido un error inesperado.'
+    },
+
+    -- Sistema de Armas (integrado)
+    error = {
+        canceled = 'Cancelado',
+        max_ammo = 'Munición al máximo',
+        wrong_ammo = 'Esta munición no es compatible con tu arma.',
+        no_weapon = 'No tienes ningún arma.',
+        no_support_attachment = 'Este arma no puede llevar este accesorio.',
+        no_weapon_in_hand = 'No tienes ningún arma en la mano.',
+        weapon_broken = 'Este arma está estropeada y no puedes usarla.',
+        no_damage_on_weapon = 'Este arma no está dañada..',
+        weapon_broken_need_repair = 'Tu arma está estropeada, necesitas repararla antes de poder usarla.',
+        attachment_already_on_weapon = 'Ya tienes un %{value} en tu arma.'
+    },
+    success = {
+        reloaded = 'Recargada'
+    },
+    info = {
+        loading_bullets = 'Cargando Munición',
+        repairshop_not_usable = 'La tienda de reparación en este momento ~r~NO~w~ puede ser usada.',
+        weapon_will_repair = 'Tu arma será reparada.',
+        take_weapon_back = '[E] - Coger Tu Arma',
+        repair_weapon_price = '[E] Reparar Arma, ~g~$%{value}~w~',
+        removed_attachment = 'Has quitado el %{value} de tu arma!',
+        hp_of_weapon = 'Durabilidad de tu arma'
+    },
+    mail = {
+        sender = 'Tyrone',
+        subject = 'Reparación',
+        message = 'Tu %{value} ha sido reparada, puedes recogerla en esta ubicación. <br><br> Espabila matao'
     }
 }
 
@@ -88,6 +110,6 @@ if GetConvar('qb_locale', 'en') == 'es' then
     Lang = Locale:new({
         phrases = Translations,
         warnOnMissing = true,
-        fallbackLang = Lang -- Usa en.lua si falta alguna clave
+        fallbackLang = Lang
     })
 end

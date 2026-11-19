@@ -21,7 +21,7 @@
       <div
         class="inventory-container"
         v-if="isInventoryOpen"
-        :class="[{ 'cursor-mode': cursorModeActive, 'sim-combine-mode': simCombineState.isActive }, 'layout-' + inventoryPosition]"
+        :class="[{ 'cursor-mode': cursorModeActive, 'sim-combine-mode': simCombineState.isActive }, 'layout-' + effectiveInventoryPosition]"
         @mousemove="drag"
         @mouseup="endDrag"
         @mousedown="containerMouseDownAction">
@@ -80,6 +80,50 @@
           <div class="equipment-sidebar" v-show="activeTab === 'inventory'">
             <div
               class="item-slot equipment-slot"
+              data-slot="103"
+              :class="{
+                'invalid-slot-highlight': errorSlot === 103,
+                'slot-dimmed': !matchesSearch(getItemInSlot(103, 'player'), playerSearchQuery),
+                'sim-target': isSimCompatible(103, 'player'),
+                'sim-source': simCombineState.isActive && simCombineState.sourceSlot === 103 && simCombineState.sourceInventory === 'player'
+              }"
+              @dblclick="getItemInSlot(103, 'player') && useItem(getItemInSlot(103, 'player'))"
+              @mousedown="event => handleMouseDown(event, 103, 'player')"
+              @dragover.prevent>
+              <div class="item-slot-key equipment-icon" v-if="!getItemInSlot(103, 'player')">
+                <iconify-icon icon="mdi:cellphone"></iconify-icon>
+              </div>
+
+              <template v-if="getItemInSlot(103, 'player')">
+                <div
+                  class="item-slot-img"
+                  v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(103, 'player')), html: true}">
+                  <img
+                    v-if="!isImageMissing(getItemInSlot(103, 'player').image)"
+                    :src="'images/' + getItemInSlot(103, 'player').image"
+                    @error="handleImageError(getItemInSlot(103, 'player').image)"
+                    alt="" />
+                  <div v-else class="missing-img-placeholder">
+                    <iconify-icon
+                      icon="mdi:image-off-outline"
+                      class="missing-img-icon"></iconify-icon>
+                    <span>SIN FOTO</span>
+                  </div>
+                </div>
+                <div
+                  v-if="getItemInSlot(103, 'player').name === 'phone' && getItemInSlot(103, 'player').hasSim"
+                  class="sim-overlay-icon"
+                  v-tooltip.top="'SIM Insertada'">
+                  <img
+                    src="images/sim_card.png"
+                    alt="SIM"
+                    style="width: 100%; height: 100%; object-fit: contain" />
+                </div>
+              </template>
+            </div>
+
+            <div
+              class="item-slot equipment-slot"
               data-slot="102"
               :class="{ 'invalid-slot-highlight': errorSlot === 102, 'slot-dimmed': !matchesSearch(getItemInSlot(102, 'player'), playerSearchQuery) }"
               @dblclick="getItemInSlot(102, 'player') && useItem(getItemInSlot(102, 'player'))"
@@ -93,7 +137,17 @@
                 <div
                   class="item-slot-img"
                   v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(102, 'player')), html: true}">
-                  <img :src="'images/' + getItemInSlot(102, 'player').image" alt="" />
+                  <img
+                    v-if="!isImageMissing(getItemInSlot(102, 'player').image)"
+                    :src="'images/' + getItemInSlot(102, 'player').image"
+                    @error="handleImageError(getItemInSlot(102, 'player').image)"
+                    alt="" />
+                  <div v-else class="missing-img-placeholder">
+                    <iconify-icon
+                      icon="mdi:image-off-outline"
+                      class="missing-img-icon"></iconify-icon>
+                    <span>SIN FOTO</span>
+                  </div>
                 </div>
                 <div class="item-slot-amount">
                   <p>x{{ getItemInSlot(102, 'player').amount }}</p>
@@ -124,7 +178,17 @@
                 <div
                   class="item-slot-img"
                   v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(101, 'player')), html: true}">
-                  <img :src="'images/' + getItemInSlot(101, 'player').image" alt="" />
+                  <img
+                    v-if="!isImageMissing(getItemInSlot(101, 'player').image)"
+                    :src="'images/' + getItemInSlot(101, 'player').image"
+                    @error="handleImageError(getItemInSlot(101, 'player').image)"
+                    alt="" />
+                  <div v-else class="missing-img-placeholder">
+                    <iconify-icon
+                      icon="mdi:image-off-outline"
+                      class="missing-img-icon"></iconify-icon>
+                    <span>SIN FOTO</span>
+                  </div>
                 </div>
                 <div class="item-slot-amount">
                   <p>x{{ getItemInSlot(101, 'player').amount }}</p>
@@ -156,23 +220,11 @@
 
                 <div class="header-actions">
                   <div
-                    class="weight-icon-btn expandable-search"
-                    :class="{ 'active': showPlayerSearch }"
-                    @click="!showPlayerSearch ? togglePlayerSearch() : null"
-                    v-tooltip.bottom="!showPlayerSearch ? 'Buscar ítem' : ''">
-                    <div class="search-icon-fixed">
-                      <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
-                    </div>
-                    <input
-                      type="text"
-                      id="player-search-input"
-                      class="admin-search-input-integrated"
-                      v-model="playerSearchQuery"
-                      placeholder="Buscar..."
-                      autocomplete="off" />
-                    <div class="close-search-btn" @click.stop="togglePlayerSearch()">
-                      <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
-                    </div>
+                    v-if="!showPlayerSearch"
+                    class="weight-icon-btn"
+                    @click="togglePlayerSearch()"
+                    v-tooltip.bottom="'Buscar ítem'">
+                    <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
                   </div>
 
                   <div class="header-amount-input">
@@ -192,6 +244,25 @@
                   class="weight-bar-fill"
                   :style="{ width: Math.min((playerWeight / maxWeight) * 100, 100) + '%' }"
                   :class="weightBarClass"></div>
+              </div>
+              <div class="dropdown-search-row" :class="{ 'open': showPlayerSearch }">
+                <div class="dropdown-search-bar">
+                  <iconify-icon
+                    icon="material-symbols:search-rounded"
+                    class="dropdown-search-icon"></iconify-icon>
+                  <input
+                    type="text"
+                    id="player-search-input"
+                    v-model="playerSearchQuery"
+                    placeholder="Buscar ítem..."
+                    autocomplete="off" />
+                </div>
+                <div
+                  class="weight-icon-btn search-btn-active dropdown-search-close-btn"
+                  @click="togglePlayerSearch()"
+                  v-tooltip.bottom="'Cerrar búsqueda'">
+                  <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+                </div>
               </div>
 
               <div class="inventory-grid custom-scrollbar">
@@ -220,7 +291,17 @@
                       <div
                         class="item-slot-img"
                         v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'player')), html: true}">
-                        <img :src="'images/' + getItemInSlot(slot, 'player').image" alt="" />
+                        <img
+                          v-if="!isImageMissing(getItemInSlot(slot, 'player').image)"
+                          :src="'images/' + getItemInSlot(slot, 'player').image"
+                          @error="handleImageError(getItemInSlot(slot, 'player').image)"
+                          alt="" />
+                        <div v-else class="missing-img-placeholder">
+                          <iconify-icon
+                            icon="mdi:image-off-outline"
+                            class="missing-img-icon"></iconify-icon>
+                          <span>SIN FOTO</span>
+                        </div>
                       </div>
 
                       <!-- IMAGEN DE SIM EN EL SLOT -->
@@ -278,8 +359,16 @@
                           class="item-slot-img"
                           v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot((basePlayerSlots + extraSlot), 'player')), html: true}">
                           <img
+                            v-if="!isImageMissing(getItemInSlot((basePlayerSlots + extraSlot), 'player').image)"
                             :src="'images/' + getItemInSlot((basePlayerSlots + extraSlot), 'player').image"
+                            @error="handleImageError(getItemInSlot((basePlayerSlots + extraSlot), 'player').image)"
                             alt="" />
+                          <div v-else class="missing-img-placeholder">
+                            <iconify-icon
+                              icon="mdi:image-off-outline"
+                              class="missing-img-icon"></iconify-icon>
+                            <span>SIN FOTO</span>
+                          </div>
                         </div>
 
                         <!-- ICONO DE SIM EN MOCHILA -->
@@ -1214,11 +1303,6 @@
           </div>
 
           <div class="menu-footer" style="position: relative">
-            <div class="footer-action">
-              <span class="key-badge">J</span>
-              <span>MODO CURSOR</span>
-            </div>
-
             <div class="desarrollo">Desarrollado por <strong>DP-Scripts</strong></div>
           </div>
         </div>
@@ -1249,23 +1333,11 @@
 
             <div class="header-actions">
               <div
-                class="weight-icon-btn expandable-search"
-                :class="{ 'active': showOtherSearch }"
-                @click="!showOtherSearch ? toggleOtherSearch() : null"
-                v-tooltip.bottom="!showOtherSearch ? 'Buscar ítem' : ''">
-                <div class="search-icon-fixed">
-                  <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
-                </div>
-                <input
-                  type="text"
-                  id="other-search-input"
-                  class="admin-search-input-integrated"
-                  v-model="otherSearchQuery"
-                  placeholder="Buscar..."
-                  autocomplete="off" />
-                <div class="close-search-btn" @click.stop="toggleOtherSearch()">
-                  <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
-                </div>
+                v-if="!showOtherSearch"
+                class="weight-icon-btn"
+                @click="toggleOtherSearch()"
+                v-tooltip.bottom="'Buscar ítem'">
+                <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
               </div>
 
               <div
@@ -1280,6 +1352,25 @@
               class="weight-bar-fill"
               :style="{ width: Math.min((otherInventoryWeight / otherInventoryMaxWeight) * 100, 100) + '%' }"
               :class="otherWeightBarClass"></div>
+          </div>
+          <div class="dropdown-search-row" :class="{ 'open': showOtherSearch }">
+            <div class="dropdown-search-bar">
+              <iconify-icon
+                icon="material-symbols:search-rounded"
+                class="dropdown-search-icon"></iconify-icon>
+              <input
+                type="text"
+                id="other-search-input"
+                v-model="otherSearchQuery"
+                placeholder="Buscar ítem..."
+                autocomplete="off" />
+            </div>
+            <div
+              class="weight-icon-btn search-btn-active dropdown-search-close-btn"
+              @click="toggleOtherSearch()"
+              v-tooltip.bottom="'Cerrar búsqueda'">
+              <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+            </div>
           </div>
 
           <div class="inventory-grid">
@@ -1296,7 +1387,17 @@
                   <div
                     class="item-slot-img"
                     v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'other')), html: true}">
-                    <img :src="'images/' + getItemInSlot(slot, 'other').image" alt="" />
+                    <img
+                      v-if="!isImageMissing(getItemInSlot(slot, 'other').image)"
+                      :src="'images/' + getItemInSlot(slot, 'other').image"
+                      @error="handleImageError(getItemInSlot(slot, 'other').image)"
+                      alt="" />
+                    <div v-else class="missing-img-placeholder">
+                      <iconify-icon
+                        icon="mdi:image-off-outline"
+                        class="missing-img-icon"></iconify-icon>
+                      <span>SIN FOTO</span>
+                    </div>
                   </div>
                   <div class="item-slot-amount" v-if="getItemInSlot(slot, 'other').amount > 1">
                     <p>x{{ getItemInSlot(slot, 'other').amount }}</p>
@@ -1332,7 +1433,17 @@
               </div>
               <template v-if="getHotbarItemInSlot(slot)">
                 <div class="item-slot-img">
-                  <img :src="'images/' + getHotbarItemInSlot(slot).image" alt="" />
+                  <img
+                    v-if="!isImageMissing(getHotbarItemInSlot(slot).image)"
+                    :src="'images/' + getHotbarItemInSlot(slot).image"
+                    @error="handleImageError(getHotbarItemInSlot(slot).image)"
+                    alt="" />
+                  <div v-else class="missing-img-placeholder">
+                    <iconify-icon
+                      icon="mdi:image-off-outline"
+                      class="missing-img-icon"></iconify-icon>
+                    <span>SIN FOTO</span>
+                  </div>
                 </div>
                 <div class="item-slot-amount" v-if="getHotbarItemInSlot(slot).amount > 1">
                   <p>x{{ getHotbarItemInSlot(slot).amount }}</p>
@@ -1365,7 +1476,17 @@
             class="notification-slot"
             :class="'notif-' + notif.action">
             <div class="notif-left">
-              <img :src="notif.image" alt="" />
+              <img
+                v-if="!isImageMissing(notif.image)"
+                :src="notif.image"
+                @error="handleImageError(notif.image)"
+                alt="" />
+              <div v-else class="missing-img-placeholder">
+                <iconify-icon
+                  icon="mdi:image-off-outline"
+                  class="missing-img-icon"
+                  style="font-size: 2vh"></iconify-icon>
+              </div>
             </div>
 
             <div class="notif-right">
@@ -1383,7 +1504,17 @@
         <div class="required-item">
           <div v-for="(item, index) in requiredItems" :key="index" class="item-slot">
             <div class="item-slot-img">
-              <img :src="'images/' + item.image" alt="" />
+              <img
+                v-if="!isImageMissing(item.image)"
+                :src="'images/' + item.image"
+                @error="handleImageError(item.image)"
+                alt="" />
+              <div v-else class="missing-img-placeholder">
+                <iconify-icon
+                  icon="mdi:image-off-outline"
+                  class="missing-img-icon"></iconify-icon>
+                <span>SIN FOTO</span>
+              </div>
             </div>
             <div class="item-slot-label">
               <p>{{ item.label }}</p>
@@ -1405,7 +1536,18 @@
           <div class="wip-preview">
             <!-- Imagen centrada grande -->
             <div class="wip-img-wrap">
-              <img :src="'images/' + selectedWeapon.image" alt="" />
+              <img
+                v-if="!isImageMissing(selectedWeapon.image)"
+                :src="'images/' + selectedWeapon.image"
+                @error="handleImageError(selectedWeapon.image)"
+                alt="" />
+              <div v-else class="missing-img-placeholder">
+                <iconify-icon
+                  icon="mdi:image-off-outline"
+                  class="missing-img-icon"
+                  style="font-size: 4vh"></iconify-icon>
+                <span>SIN FOTO</span>
+              </div>
             </div>
 
             <!-- Nombre del arma -->
@@ -1494,7 +1636,15 @@
         :class="{ 'dragged-item': draggedItem }"
         :style="{ top: dragY + 'px', left: dragX + 'px' }">
         <div class="item-slot-img">
-          <img :src="'images/' + draggedItem.image" alt="" />
+          <img
+            v-if="!isImageMissing(draggedItem.image)"
+            :src="'images/' + draggedItem.image"
+            @error="handleImageError(draggedItem.image)"
+            alt="" />
+          <div v-else class="missing-img-placeholder">
+            <iconify-icon icon="mdi:image-off-outline" class="missing-img-icon"></iconify-icon>
+            <span>SIN FOTO</span>
+          </div>
         </div>
         <div class="item-slot-amount">
           <p>x{{ draggedItem.amount }}</p>
@@ -1620,10 +1770,19 @@
           <div class="inspect-modal-body">
             <div class="inspect-image-box" @wheel.prevent="handleInspectZoom">
               <img
+                v-if="!isImageMissing(inspectingItem.image)"
                 :src="'images/' + inspectingItem.image"
+                @error="handleImageError(inspectingItem.image)"
                 alt="Item"
                 :style="{ transform: 'perspective(1000px) rotateY(' + inspectRotation + 'deg) scale(' + inspectZoom + ')' }"
                 class="inspect-image" />
+              <div v-else class="missing-img-placeholder">
+                <iconify-icon
+                  icon="mdi:image-off-outline"
+                  class="missing-img-icon"
+                  style="font-size: 6vh"></iconify-icon>
+                <span style="font-size: 1.2vh">SIN FOTO</span>
+              </div>
             </div>
 
             <div class="inspect-controls">

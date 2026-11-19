@@ -53,7 +53,7 @@ function CheckBackpackUnequip(source)
         return
     end
 
-    local maxBaseSlots = 41 -- Debe coincidir con Config.MaxSlots
+    local maxBaseSlots = 35 -- Debe coincidir con Config.MaxSlots
     local allowedSlots = maxBaseSlots
 
     -- Comprobamos si tiene una mochila expansora equipada en el slot 101

@@ -1,45 +1,37 @@
 fx_version 'cerulean'
 game 'gta5'
 lua54 'yes'
-author 'Kakarot'
-description 'Player inventory system providing a variety of features for storing and managing items'
-version '2.0.0'
+author 'DP-Scripts'
+description 'Sistema de inventario de jugadores que proporciona una variedad de funciones para almacenar y administrar artículos y armas'
+version '1.5.1'
 
 shared_scripts {
     '@qb-core/shared/locale.lua',
     'locales/es.lua',
     'locales/*.lua',
-    'config/*.lua'
+    'config/*.lua',
 }
 
 client_scripts {
-    'client/main_client.lua',
-    'client/drops.lua',
-    'client/vehicles.lua',
-    'client/backitems.lua',
-    'client/backpack_cl.lua',
-    'client/sim.lua'
+    'client/*.lua',
 }
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
-    'server/main_server.lua',
-    'server/functions.lua',
-    'server/commands.lua',
-    'server/backpack_sv.lua',
-    'server/sim.lua'
+    'server/*.lua',
 }
 
 ui_page 'ui/index.html'
 
 files {
-    'ui/index.html',
-    'ui/style.css',
-    'ui/script.js',
-    'ui/sounds/*.mp3',
+    'ui/*.html',
+    'ui/*.css',
+    'ui/*.js',
     'ui/images/**/*.png',
-    'ui/images/*.png'
+    'ui/images/*.png',
+    'dp_weapons.meta'
 }
 
-dependency 'qb-weapons'
+data_file 'WEAPONINFO_FILE_PATCH' 'dp_weapons.meta'
+
 dependency 'DP-TextUI'

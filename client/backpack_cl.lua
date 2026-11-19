@@ -64,7 +64,7 @@ local ExpanderBags = {
 RegisterNetEvent('DP-Inventory:client:OpenCustomBag', function(bagId, bagSlots, bagMaxWeight, itemName)
     -- Abrimos el stash usando el evento nativo de DP-Inventory/QBCore,
     -- pasando la configuración custom (peso y slots propios de esta mochila)
-    TriggerServerEvent("inventory:server:OpenInventory", "stash", bagId, {
+    TriggerServerEvent("DP-Inventory:server:OpenInventory", "stash", bagId, {
         maxweight = bagMaxWeight,
         slots = bagSlots,
         label = "Mochila Custom"
