@@ -1,3 +1,5 @@
+-- DP-Inventory · client/weaponsdraw.lua
+
 local UNARMED_HASH = joaat('WEAPON_UNARMED')
 
 local holstered = true
@@ -6,7 +8,7 @@ local currWeap = UNARMED_HASH
 local currHolster = nil
 local currHolsterTexture = nil
 local wearingHolster = nil
-local isDrawLoopActive = false -- Evita que se creen bucles duplicados
+local isDrawLoopActive = false
 
 local function loadAnimDict(dict)
     if HasAnimDictLoaded(dict) then
@@ -18,7 +20,6 @@ local function loadAnimDict(dict)
     end
 end
 
--- Detecta cualquier arma (vanilla o custom) excepto puños, nudillera invisible y navaja retráctil
 local function checkWeapon(newWeap)
     if not newWeap or newWeap == 0 or newWeap == UNARMED_HASH or newWeap == joaat('WEAPON_KNUCKLE') or newWeap == joaat('WEAPON_SWITCHBLADE') then
         return false
@@ -53,7 +54,7 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
     end
     if isDrawLoopActive then
         return
-    end -- Ya hay un bucle vigilando, no creamos otro
+    end
     isDrawLoopActive = true
 
     CreateThread(function()
@@ -91,7 +92,6 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
 
                     if checkWeapon(newWeap) then
                         if holstered then
-                            -- SACAR ARMA DESDE DESARMADO
                             canFire = false
                             CeaseFire()
                             if wearingHolster then
@@ -116,7 +116,6 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
                             canFire = true
 
                         elseif newWeap ~= currWeap and checkWeapon(currWeap) then
-                            -- CAMBIAR DIRECTAMENTE DE ARMA A -> ARMA B (Ej: Pistola a Escopeta)
                             canFire = false
                             CeaseFire()
                             if wearingHolster then
@@ -135,12 +134,10 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
                                 SetCurrentPedWeapon(ped, newWeap, true)
                                 Wait(500)
                             else
-                                -- 1. Guarda arma actual
                                 TaskPlayAnimAdvanced(ped, 'reaction@intimidation@1h', 'outro', pos.x, pos.y, pos.z, 0,
                                     0, rot, 8.0, 3.0, -1, 50, 0, 0, 0)
                                 Wait(1400)
                                 SetCurrentPedWeapon(ped, UNARMED_HASH, true)
-                                -- 2. Saca arma nueva
                                 TaskPlayAnimAdvanced(ped, 'reaction@intimidation@1h', 'intro', pos.x, pos.y, pos.z, 0,
                                     0, rot, 8.0, 3.0, -1, 50, 0, 0, 0)
                                 Wait(1000)
@@ -152,7 +149,6 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
                             holstered = false
                             canFire = true
                         else
-                            -- FALLBACK: Saca arma nueva
                             canFire = false
                             CeaseFire()
                             SetCurrentPedWeapon(ped, UNARMED_HASH, true)
@@ -177,7 +173,6 @@ RegisterNetEvent('DP-Inventory:client:DrawWeapon', function()
                             canFire = true
                         end
                     else
-                        -- GUARDAR ARMA (A DESARMADO)
                         if not holstered and checkWeapon(currWeap) then
                             canFire = false
                             CeaseFire()

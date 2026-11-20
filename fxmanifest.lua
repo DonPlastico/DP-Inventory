@@ -34,4 +34,4 @@ files {
 
 data_file 'WEAPONINFO_FILE_PATCH' 'dp_weapons.meta'
 
-dependency 'DP-TextUI'
+dependency 'DP-Hud'

@@ -1,11 +1,5 @@
--- ============================================================
---  DP-INVENTORY · server/functions.lua
---  Funciones del lado servidor: CRUD de inventario, pesos,
---  slots, tiendas, stashes y utilidades de ítems.
--- ============================================================
--- ============================================================
---  FUNCIONES INTERNAS COMPARTIDAS
--- ============================================================
+-- DP-Inventory · server/functions.lua
+
 local ExpanderBags = {
     ['backpack_1'] = {
         extraSlots = 5,
@@ -40,9 +34,6 @@ local function GetPlayerMaxCapacity(Player)
     return maxWeight, maxSlots
 end
 
--- ============================================================
---  FUNCIONES LOCALES
--- ============================================================
 local function InitializeInventory(inventoryId, data)
     Inventories[inventoryId] = {
         items = {},
@@ -91,9 +82,6 @@ local function SetupShopItems(shopItems)
     return items
 end
 
--- ============================================================
---  CARGA / GUARDADO
--- ============================================================
 function LoadInventory(source, citizenid)
     local inventory = MySQL.prepare.await('SELECT inventory FROM players WHERE citizenid = ?', {citizenid})
     local loadedInventory = {}
@@ -207,9 +195,6 @@ function SetInventory(identifier, items, reason)
 end
 exports('SetInventory', SetInventory)
 
--- ============================================================
---  METADATOS DE ÍTEMS
--- ============================================================
 function SetItemData(source, itemName, key, val, slot)
     if not itemName or not key then
         return false
@@ -247,9 +232,6 @@ function UseItem(itemName, ...)
 end
 exports('UseItem', UseItem)
 
--- ============================================================
---  BÚSQUEDA / CONSULTA
--- ============================================================
 function GetSlotsByItem(items, itemName)
     local slotsFound = {}
     if not items then
@@ -400,9 +382,6 @@ function GetFreeWeight(source)
 end
 exports('GetFreeWeight', GetFreeWeight)
 
--- ============================================================
---  VALIDACIÓN
--- ============================================================
 function CanAddItem(identifier, item, amount)
     local Player = QBCore.Functions.GetPlayer(identifier)
     local itemData = QBCore.Shared.Items[item:lower()]
@@ -490,9 +469,6 @@ function HasItem(source, items, amount)
 end
 exports('HasItem', HasItem)
 
--- ============================================================
---  GESTIÓN DE INVENTARIO
--- ============================================================
 function ClearInventory(source, filterItems)
     local player = QBCore.Functions.GetPlayer(source)
     if not player then
@@ -666,7 +642,7 @@ function OpenInventory(source, identifier, data)
 
     local inventory = Inventories[identifier]
 
-    if inventory and inventory.isOpen then
+    if inventory and inventory.isOpen and inventory.isOpen ~= source then
         TriggerClientEvent('QBCore:Notify', source, 'Este inventario se encuentra actualmente en uso', 'error')
         return
     end

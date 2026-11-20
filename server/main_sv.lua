@@ -1,68 +1,113 @@
--- ============================================================
---  DP-INVENTORY · server/main_server.lua
---  Núcleo del servidor. Gestiona el ciclo de vida de inventarios,
---  drops, tiendas, movimientos de ítems (anti-dupe), callbacks
---  de interacción y preferencias de usuario en base de datos.
---
---  ÍNDICE DE CONTENIDOS
---  ─────────────────────────────────────────────────────────
---  [1]  VARIABLES GLOBALES
---  [2]  THREADS DE INICIO
---         · Carga de inventarios desde BD
---         · Limpieza periódica de drops
---  [3]  HANDLERS DE CICLO DE VIDA
---         · playerDropped      – libera locks al desconectarse
---         · serverShuttingDown – guarda inventarios en shutdown
---         · QBCore:Server:PlayerLoaded – inyecta métodos al jugador
---         · onResourceStart    – re-inyecta métodos en hot-restart
---  [4]  FUNCIÓN – checkWeapon
---  [5]  EVENTOS DE RED
---         · openVending        – tiendas expendedoras
---         · OpenInventory      – abrir inventario de otro jugador
---         · closeInventory     – cerrar inventario y guardar BD
---         · useItem            – usar ítem (armas, documentos, usables)
---         · updateDrop         – actualizar posición de un drop
---         · ForceOpenStash     – admin: abrir stash sin proximidad
---  [6]  CALLBACKS
---         · GetCurrentDrops    – lista de drops activos
---         · requestHoldDrop    – coger bolsa del suelo
---         · createDrop         – crear drop al tirar un ítem
---         · attemptPurchase    – comprar en tienda
---         · giveItem           – dar ítem a otro jugador
---         · requestOpenDrop    – abrir bolsa del suelo
---         · GetPlayerNames     – nombres de personajes cercanos
---  [7]  LÓGICA DE MOVIMIENTO DE ÍTEMS (ANTI-DUPE)
---         · getItem            – helper: obtiene ítem por slot
---         · getIdentifier      – helper: traduce inventoryId a ID real
---         · SetInventoryData   – drag&drop, split, swap, move
---  [8]  SISTEMA ADMIN
---         · IsAdmin            – comprueba permisos
---         · GetAdminMasterData – todos los inventarios del servidor
---  [9]  PREFERENCIAS DE USUARIO (BD: dp_preferences)
---         · GetPosition / SavePosition
---         · GetMovePref / SaveMovePref
---         · GetSoundPref / SaveSoundPref
--- ============================================================
--- ============================================================
---  [1] VARIABLES GLOBALES
---  Accesibles desde functions.lua, backpack_sv.lua, commands.lua
--- ============================================================
 QBCore = exports['qb-core']:GetCoreObject()
 
-Inventories = {} -- Cache en RAM de todos los stashes/inventarios especiales
-Drops = {} -- Cache en RAM de todos los drops (bolsas en el suelo)
-RegisteredShops = {} -- Cache en RAM de todas las tiendas registradas
+Inventories = {}
+Drops = {}
+RegisteredShops = {}
 
--- ============================================================
---  [2] THREADS DE INICIO
--- ============================================================
+local function EnsureDatabaseSchema()
+    if Config.Database and Config.Database.autoCreateTables == false then
+        return
+    end
 
---- Carga todos los inventarios de la BD en la cache RAM al arrancar el recurso.
---- Esto permite acceso O(1) sin consultas SQL en cada operación de inventario.
--- ==========================================
--- THREADS
--- ==========================================
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS `inventories` (
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `identifier` varchar(255) NOT NULL,
+          `items` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`items`)),
+          PRIMARY KEY (`identifier`),
+          KEY `id` (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ]])
+
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS `dp_preferences` (
+          `citizenid` varchar(50) NOT NULL,
+          `menu_top` varchar(20) DEFAULT '14.537%',
+          `menu_left` varchar(20) DEFAULT '62.5%',
+          `menu_scale` INT DEFAULT 90,
+          `inventory_position` varchar(20) DEFAULT 'bottom',
+          `move_while_open` INT DEFAULT 0,
+          `ui_sounds` INT DEFAULT 1,
+          `boombox_move_open` INT DEFAULT 0,
+          `boombox_top` varchar(20) DEFAULT NULL,
+          `boombox_left` varchar(20) DEFAULT NULL,
+          PRIMARY KEY (`citizenid`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ]])
+
+    -- columnas por si la tabla existía de versiones viejas / boombox
+    local cols = {{'ui_sounds', "INT DEFAULT 1"}, {'boombox_move_open', "INT DEFAULT 0"},
+                  {'boombox_top', "varchar(20) DEFAULT NULL"}, {'boombox_left', "varchar(20) DEFAULT NULL"},
+                  {'inventory_position', "varchar(20) DEFAULT 'bottom'"}, {'move_while_open', "INT DEFAULT 0"},
+                  {'menu_top', "varchar(20) DEFAULT '14.537%'"}, {'menu_left', "varchar(20) DEFAULT '62.5%'"},
+                  {'menu_scale', "INT DEFAULT 90"}}
+    for _, col in ipairs(cols) do
+        pcall(function()
+            MySQL.query.await(('ALTER TABLE `dp_preferences` ADD COLUMN IF NOT EXISTS `%s` %s'):format(col[1], col[2]))
+        end)
+    end
+
+    print('^2[DP-Inventory]^7 Schema verificado (inventories + dp_preferences).')
+end
+
+local function RunLegacyMigration()
+    local inserted = 0
+
+    local function tableExists(name)
+        local row = MySQL.single.await(
+            'SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
+            {name})
+        return row and tonumber(row.c) > 0
+    end
+
+    if tableExists('gloveboxitems') then
+        local n = MySQL.update.await([[
+            INSERT IGNORE INTO inventories (identifier, items)
+            SELECT CONCAT('glovebox-', plate), items FROM gloveboxitems
+        ]]) or 0
+        inserted = inserted + n
+    end
+
+    if tableExists('stashitems') then
+        local n = MySQL.update.await([[
+            INSERT IGNORE INTO inventories (identifier, items)
+            SELECT stash, items FROM stashitems
+        ]]) or 0
+        inserted = inserted + n
+    end
+
+    if tableExists('trunkitems') then
+        local n = MySQL.update.await([[
+            INSERT IGNORE INTO inventories (identifier, items)
+            SELECT CONCAT('trunk-', plate), items FROM trunkitems
+        ]]) or 0
+        inserted = inserted + n
+    end
+
+    -- recargar cache RAM
+    local result = MySQL.query.await('SELECT * FROM inventories') or {}
+    for i = 1, #result do
+        local inv = result[i]
+        if not Inventories[inv.identifier] then
+            Inventories[inv.identifier] = {
+                items = json.decode(inv.items) or {},
+                isOpen = false
+            }
+        end
+    end
+
+    return inserted
+end
+
+local function DropLegacyTables()
+    MySQL.query.await('DROP TABLE IF EXISTS `gloveboxitems`')
+    MySQL.query.await('DROP TABLE IF EXISTS `stashitems`')
+    MySQL.query.await('DROP TABLE IF EXISTS `trunkitems`')
+end
+
 CreateThread(function()
+    EnsureDatabaseSchema()
+
     MySQL.query('SELECT * FROM inventories', {}, function(result)
         if result and #result > 0 then
             for i = 1, #result do
@@ -70,22 +115,18 @@ CreateThread(function()
                 local cacheKey = inventory.identifier
                 Inventories[cacheKey] = {
                     items = json.decode(inventory.items) or {},
-                    isOpen = false -- Al cargar, ningún inventario está abierto
+                    isOpen = false
                 }
             end
         end
     end)
 end)
 
---- Limpieza periódica de drops abandonados.
---- Cada `Config.CleanupDropInterval` minutos elimina los drops cuyo
---- tiempo de vida supere `Config.CleanupDropTime` minutos y no estén abiertos.
 CreateThread(function()
     while true do
         Wait(Config.CleanupDropInterval * 60000)
         local currentTime = os.time()
         for k, v in pairs(Drops) do
-            -- Elimina solo si: existe, ha expirado Y nadie lo está usando
             if v and (v.createdTime + (Config.CleanupDropTime * 60) < currentTime) and not Drops[k].isOpen then
                 local entity = NetworkGetEntityFromNetworkId(v.entityId)
                 if DoesEntityExist(entity) then
@@ -97,26 +138,15 @@ CreateThread(function()
     end
 end)
 
--- ============================================================
---  [3] HANDLERS DE CICLO DE VIDA
--- ============================================================
-
---- Al desconectarse un jugador, libera todos los locks de inventarios y drops
---- que tuviera abiertos o cogidos para que otros jugadores puedan acceder.
--- ==========================================
--- HANDLERS
--- ==========================================
 AddEventHandler('playerDropped', function()
     local src = source
 
-    -- Libera el lock de cualquier stash que tuviera abierto
     for _, inv in pairs(Inventories) do
         if inv.isOpen == src then
             inv.isOpen = false
         end
     end
 
-    -- Libera el lock de bolsas abiertas o que llevara en la mano
     for _, drop in pairs(Drops) do
         if drop.isOpen == src then
             drop.isOpen = false
@@ -127,8 +157,6 @@ AddEventHandler('playerDropped', function()
     end
 end)
 
---- Al apagar el servidor (via txAdmin), guarda todos los inventarios en BD.
---- Usa INSERT ... ON DUPLICATE KEY UPDATE para no perder datos de stashes nuevos.
 AddEventHandler('txAdmin:events:serverShuttingDown', function()
     for inventory, data in pairs(Inventories) do
         MySQL.prepare('INSERT INTO inventories (identifier, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?',
@@ -136,9 +164,6 @@ AddEventHandler('txAdmin:events:serverShuttingDown', function()
     end
 end)
 
---- Al cargar un jugador, inyecta en su objeto QBPlayer los métodos del inventario.
---- Esto permite que otros recursos usen `Player.Functions.AddItem(...)` directamente,
---- igual que en qb-inventory base, manteniendo compatibilidad total.
 AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
     local src = Player.PlayerData.source
     QBCore.Functions.AddPlayerMethod(src, 'AddItem', function(item, amount, slot, info, reason)
@@ -164,9 +189,6 @@ AddEventHandler('QBCore:Server:PlayerLoaded', function(Player)
     end)
 end)
 
---- En hot-restart del recurso, re-inyecta los métodos a TODOS los jugadores online
---- para que no pierdan acceso al inventario sin reconectarse.
---- También resetea inv_busy por si quedó bloqueado de un ciclo anterior.
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then
         return
@@ -194,24 +216,25 @@ AddEventHandler('onResourceStart', function(resourceName)
         QBCore.Functions.AddPlayerMethod(k, 'SetInventory', function(items)
             SetInventory(k, items)
         end)
-        Player(k).state.inv_busy = false -- Reseteo de seguridad en hot-restart
+        Player(k).state.inv_busy = false
     end
 end)
 
--- ============================================================
---  [4] FUNCIÓN – checkWeapon
---  Comprueba si el jugador tiene el arma especificada en mano
---  y si es así, se la retira del ped y notifica a DP-Inventory.
---  Se llama al eliminar un arma del inventario (RemoveItem,
---  createDrop, giveItem) para evitar el "arma fantasma".
---
---  @param source  number  Server ID del jugador
---  @param item    string|table  Nombre del arma o tabla del ítem
--- ============================================================
+AddEventHandler('onResourceStop', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+    for k, v in pairs(Drops) do
+        if v and v.entityId then
+            local entity = NetworkGetEntityFromNetworkId(v.entityId)
+            if DoesEntityExist(entity) then
+                DeleteEntity(entity)
+            end
+        end
+        Drops[k] = nil
+    end
+end)
 
--- ==========================================
--- FUNCTIONS
--- ==========================================
 function checkWeapon(source, item)
     local currentWeapon = type(item) == 'table' and item.name or item
     local ped = GetPlayerPed(source)
@@ -219,23 +242,12 @@ function checkWeapon(source, item)
     local weaponInfo = QBCore.Shared.Weapons[weapon]
     if weaponInfo and weaponInfo.name == currentWeapon then
         RemoveWeaponFromPed(ped, weapon)
-        -- Notificamos a DP-Inventory para que limpie su estado interno
         TriggerClientEvent('DP-Inventory:client:UseWeapon', source, {
             name = currentWeapon
         }, false)
     end
 end
 
--- ============================================================
---  [5] EVENTOS DE RED
--- ============================================================
-
---- Abre la tienda de una máquina expendedora.
---- Optimización: solo crea la tienda 'vending' la primera vez;
---- en llamadas sucesivas actualiza solo las coordenadas.
--- ==========================================
--- EVENTS
--- ==========================================
 RegisterNetEvent('DP-Inventory:server:openVending', function(data)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -243,7 +255,6 @@ RegisterNetEvent('DP-Inventory:server:openVending', function(data)
         return
     end
 
-    -- Solo crea la tienda si no existe para evitar fugas de memoria
     if not RegisteredShops['vending'] then
         CreateShop({
             name = 'vending',
@@ -253,29 +264,18 @@ RegisterNetEvent('DP-Inventory:server:openVending', function(data)
             items = Config.VendingItems
         })
     else
-        -- Si ya existe, actualizamos las coordenadas a la máquina actual
         RegisteredShops['vending'].coords = data.coords
     end
     OpenShop(src, 'vending')
 end)
 
---- Abre el inventario de otro jugador (usado por el admin y el cacheo).
---- Actualmente solo soporta el tipo 'otherplayer'.
----
---- @param type      string  Tipo de apertura ('otherplayer')
---- @param targetId  number  Server ID del jugador objetivo
 RegisterNetEvent('DP-Inventory:server:OpenInventory', function(type, targetId)
     local src = source
     if type == "otherplayer" then
-        OpenInventoryById(src, targetId) -- De functions.lua
+        OpenInventoryById(src, targetId)
     end
 end)
 
---- Cierra un inventario y gestiona toda la lógica de post-cierre:
----   · Tiendas    → solo libera inv_busy, no guarda BD
----   · Otros jugadores → libera inv_busy del objetivo
----   · Drops      → libera lock; si queda vacío, destruye la entidad
----   · Stashes    → guarda en BD + calcula peso dinámico si es mochila (bag_)
 RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
     local src = source
     local QBPlayer = QBCore.Functions.GetPlayer(src)
@@ -285,12 +285,23 @@ RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
 
     Player(src).state.inv_busy = false
 
-    -- Las tiendas no tienen estado que guardar
+    for invId, invData in pairs(Inventories) do
+        if invData.isOpen == src and invId ~= inventory then
+            invData.isOpen = false
+            MySQL.prepare('INSERT INTO inventories (identifier, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?',
+                {invId, json.encode(invData.items), json.encode(invData.items)})
+        end
+    end
+    for dropId, dropData in pairs(Drops) do
+        if dropData.isOpen == src and dropId ~= inventory then
+            dropData.isOpen = false
+        end
+    end
+
     if inventory:find('shop%-') then
         return
     end
 
-    -- Inventario de otro jugador → libera su estado
     if inventory:find('otherplayer%-') then
         local targetId = tonumber(inventory:match('otherplayer%-(.+)'))
         if targetId then
@@ -299,13 +310,11 @@ RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
         return
     end
 
-    -- Drop (bolsa en el suelo)
     if Drops[inventory] then
         if Drops[inventory].isOpen == src then
             Drops[inventory].isOpen = false
         end
 
-        -- Si nadie más lo tiene abierto y está vacío → destruir entidad y limpiar
         if not Drops[inventory].isOpen then
             local hasItems = false
             for _, _ in pairs(Drops[inventory].items) do
@@ -330,23 +339,15 @@ RegisterNetEvent('DP-Inventory:server:closeInventory', function(inventory)
         return
     end
 
-    -- 1. PRIMERO guardamos en BD (anti-pérdidas: si algo falla después, los ítems ya están guardados)
     Inventories[inventory].isOpen = false
     MySQL.prepare('INSERT INTO inventories (identifier, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?',
         {inventory, json.encode(Inventories[inventory].items), json.encode(Inventories[inventory].items)})
 
-    -- 2. DESPUÉS calculamos el peso dinámico de la mochila (si algo crashea aquí, los ítems ya están salvados)
     if type(inventory) == "string" and string.find(inventory, "^bag_") then
         TriggerEvent('DP-Inventory:server:UpdateBagWeight', src, inventory)
     end
 end)
 
---- Procesa el uso de un ítem desde la hotbar o el inventario.
---- Lógica especial para:
----   · Armas       → delega animación a DP-Inventory + aviso visual
----   · id_card     → muestra los datos del DNI en el chat cercano (radio 3m)
----   · driver_license → muestra licencia en el chat cercano (radio 3m)
----   · Resto       → ejecuta el callback usable registrado en QBCore
 RegisterNetEvent('DP-Inventory:server:useItem', function(item)
     local src = source
     local itemData = GetItemBySlot(src, item.slot)
@@ -361,7 +362,6 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
             TriggerClientEvent('DP-Inventory:client:ToggleSwitchblade', src, itemData)
             TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
         else
-            -- Las armas se equipan/desequipan via DP-Inventory; la comprobación visual es instantánea en cliente
             TriggerClientEvent('DP-Inventory:client:UseWeapon', src, itemData,
                 itemData.info.quality and itemData.info.quality > 0)
             TriggerClientEvent('DP-Inventory:client:WeaponItemBox', src, itemInfo)
@@ -372,7 +372,6 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
         TriggerClientEvent('DP-Inventory:client:ItemBox', source, itemInfo, 'use')
         local playerCoords = GetEntityCoords(GetPlayerPed(src))
         local gender = item.info.gender == 0 and 'Hombre' or 'Mujer'
-        -- Mostramos el DNI en el chat solo a jugadores dentro de 3 metros
         for _, v in pairs(QBCore.Functions.GetPlayers()) do
             if #(playerCoords - GetEntityCoords(GetPlayerPed(v))) < 3.0 then
                 TriggerClientEvent('chat:addMessage', v, {
@@ -387,7 +386,6 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
         UseItem(itemData.name, src, itemData)
         TriggerClientEvent('DP-Inventory:client:ItemBox', src, itemInfo, 'use')
         local playerCoords = GetEntityCoords(GetPlayerPed(src))
-        -- Mostramos la licencia en el chat solo a jugadores dentro de 3 metros
         for _, v in pairs(QBCore.Functions.GetPlayers()) do
             if #(playerCoords - GetEntityCoords(GetPlayerPed(v))) < 3.0 then
                 TriggerClientEvent('chat:addMessage', v, {
@@ -399,29 +397,21 @@ RegisterNetEvent('DP-Inventory:server:useItem', function(item)
         end
 
     else
-        -- Ítem usable genérico: ejecuta el callback registrado con QBCore.Functions.CreateUseableItem
         UseItem(itemData.name, src, itemData)
         TriggerClientEvent('DP-Inventory:client:ItemBox', src, itemInfo, 'use')
     end
 end)
 
---- Actualiza las coordenadas de un drop cuando el jugador lo suelta.
---- Solo el jugador que lo tenía cogido (isHeld) puede liberarlo.
----
---- @param dropId  string   ID del drop ('drop-XXXX')
---- @param coords  vector3  Nueva posición del drop en el mundo
 RegisterNetEvent('DP-Inventory:server:updateDrop', function(dropId, coords)
     local src = source
     if Drops[dropId] then
         Drops[dropId].coords = coords
         if Drops[dropId].isHeld == src then
-            Drops[dropId].isHeld = false -- Solo quien la cogió puede liberarla
+            Drops[dropId].isHeld = false
         end
     end
 end)
 
---- Abre un stash específico sin comprobación de proximidad (solo admins).
---- Verificación de permisos integrada.
 RegisterNetEvent('DP-Inventory:server:ForceOpenStash', function(identifier)
     local src = source
     if not (QBCore.Functions.HasPermission(src, 'admin') or QBCore.Functions.HasPermission(src, 'god')) then
@@ -430,24 +420,14 @@ RegisterNetEvent('DP-Inventory:server:ForceOpenStash', function(identifier)
     OpenInventory(src, identifier)
 end)
 
--- ============================================================
---  [6] CALLBACKS
--- ============================================================
-
---- Devuelve la tabla completa de drops activos al cliente que la pide.
---- Usado por drops.lua (cliente) para actualizar la lista de bolsas en el mundo.
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetCurrentDrops', function(_, cb)
     cb(Drops)
 end)
 
---- Solicita el lock de una bolsa para llevarla en la mano.
---- Devuelve true solo si la bolsa existe, no está abierta y nadie la lleva.
----
---- @return  boolean, string|nil  true, o false + razón ('in_use' | 'not_found')
 QBCore.Functions.CreateCallback('DP-Inventory:server:requestHoldDrop', function(source, cb, dropId)
     if Drops[dropId] then
         if not Drops[dropId].isOpen and not Drops[dropId].isHeld then
-            Drops[dropId].isHeld = source -- Registramos quién la lleva
+            Drops[dropId].isHeld = source
             cb(true)
         else
             cb(false, "in_use")
@@ -457,16 +437,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:requestHoldDrop', function(
     end
 end)
 
---- Crea un drop al tirar un ítem del inventario al suelo.
---- Flujo:
----   1. Elimina el ítem del inventario del jugador.
----   2. Crea la entidad física (prop) en el mundo.
----   3. Registra el drop en la tabla global `Drops`.
----   4. Notifica a todos los clientes para que lo detecten.
----   5. Devuelve el networkId al cliente para que lo congele.
----
---- @param item  table  Datos del ítem a tirar (name, amount, fromSlot, type...)
---- @return      number|false  networkId del drop, o false si falló
 QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(source, cb, item)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -479,20 +449,16 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(sourc
 
     if RemoveItem(src, item.name, item.amount, item.fromSlot, 'dropped item') then
 
-        -- Integración DP-RealMoney: sincroniza el efectivo si el ítem es dinero
         if GetResourceState("DP-RealMoney") ~= 'missing' then
             exports['DP-RealMoney']:UpdateCash(src, item.name, item.amount, 'remove')
         end
 
-        -- Si era un arma, comprobamos si la tenía en mano
         if item.type == 'weapon' then
             checkWeapon(src, item)
         end
 
-        -- Animación de tirar al suelo
         TaskPlayAnim(playerPed, 'pickup_object', 'pickup_low', 8.0, -8.0, 2000, 0, 0, false, false, false)
 
-        -- Creamos la entidad física de la bolsa ligeramente desplazada del jugador
         local bag = CreateObjectNoOffset(Config.ItemDropObject, playerCoords.x + 0.5, playerCoords.y + 0.5,
             playerCoords.z, true, true, false)
         local dropId = NetworkGetNetworkIdFromEntity(bag)
@@ -501,10 +467,9 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(sourc
         item.slot = 1
         local initialItem = {
             [1] = item
-        } -- Tabla limpia sin metatables
+        }
 
         if not Drops[newDropId] then
-            -- Drop nuevo: creamos la entrada completa
             Drops[newDropId] = {
                 name = newDropId,
                 label = 'Mochila Suelo',
@@ -519,7 +484,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(sourc
             }
             TriggerClientEvent('DP-Inventory:client:setupDropTarget', -1, dropId)
         else
-            -- Drop ya existente: buscamos el primer slot libre
             local foundSlot = false
             for i = 1, Config.DropSize.slots do
                 if not Drops[newDropId].items[i] then
@@ -531,7 +495,7 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(sourc
             end
             if not foundSlot then
                 return cb(false)
-            end -- Drop lleno
+            end
         end
         cb(dropId)
     else
@@ -539,17 +503,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:createDrop', function(sourc
     end
 end)
 
---- Procesa una compra en una tienda registrada.
---- Validaciones en orden:
----   1. Cantidad válida y jugador/tienda existen
----   2. Jugador dentro del radio de la tienda (10m)
----   3. El ítem del slot coincide con el pedido (anti-tamper)
----   4. Hay suficiente stock
----   5. El inventario del jugador tiene capacidad
----   6. El jugador tiene suficiente dinero en efectivo
----
---- @param data  table  {item, amount, shop}
---- @return      boolean
 QBCore.Functions.CreateCallback('DP-Inventory:server:attemptPurchase', function(source, cb, data)
     local src = source
     local itemInfo = data.item
@@ -563,24 +516,20 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:attemptPurchase', function(
 
     local shopInfo = RegisteredShops[shop]
 
-    -- Comprobación de proximidad (solo si la tienda tiene coordenadas)
     if shopInfo.coords and
         #(GetEntityCoords(GetPlayerPed(src)) - vector3(shopInfo.coords.x, shopInfo.coords.y, shopInfo.coords.z)) > 10 then
         return cb(false)
     end
 
-    -- Anti-tamper: verificamos que el slot pedido contiene el ítem esperado
     if shopInfo.items[itemInfo.slot].name ~= itemInfo.name then
         return cb(false)
     end
 
-    -- Comprobación de stock
     if amount > shopInfo.items[itemInfo.slot].amount or shopInfo.items[itemInfo.slot].amount <= 0 then
         TriggerClientEvent('QBCore:Notify', src, 'No hay suficiente stock', 'error')
         return cb(false)
     end
 
-    -- Comprobación de espacio en inventario
     if not CanAddItem(src, itemInfo.name, amount) then
         TriggerClientEvent('QBCore:Notify', src, 'No tienes espacio suficiente', 'error')
         return cb(false)
@@ -599,42 +548,25 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:attemptPurchase', function(
     end
 end)
 
---- Transfiere un ítem de un jugador a otro.
---- Validaciones: ambos vivos/no esposados, distancia máx 5m, ítem existe
---- y cantidad suficiente. Llama a checkWeapon si era un arma.
---- Reproduce la animación de dar/recibir en ambos jugadores.
----
---- @param target  number  Server ID del receptor
---- @param item    string  Nombre del ítem
---- @param amount  number  Cantidad a dar
---- @param slot    number  Slot origen
---- @param info    table   Metadatos del ítem
 QBCore.Functions.CreateCallback('DP-Inventory:server:giveItem', function(source, cb, target, item, amount, slot, info)
     local src = source
     local player = QBCore.Functions.GetPlayer(src)
     local Target = QBCore.Functions.GetPlayer(target)
 
-    -- Validación de estado del dador
     if not player or player.PlayerData.metadata['isdead'] or player.PlayerData.metadata['inlaststand'] or
         player.PlayerData.metadata['ishandcuffed'] then
         return cb(false)
     end
 
-    -- Validación de estado del receptor
     if not Target or Target.PlayerData.metadata['isdead'] or Target.PlayerData.metadata['inlaststand'] or
         Target.PlayerData.metadata['ishandcuffed'] then
         return cb(false)
     end
 
-    -- Comprobación de proximidad (máx 5m)
     if #(GetEntityCoords(GetPlayerPed(src)) - GetEntityCoords(GetPlayerPed(target))) > 5 then
         return cb(false)
     end
 
-    -- ============================================================
-    --  AUTO-ACTIVAR SIMS VÍRGENES AL DARLAS
-    --  Si un admin da una sim_card sin número, le generamos uno.
-    -- ============================================================
     if item == 'sim_card' then
         if not info then
             info = {}
@@ -682,13 +614,11 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:giveItem', function(source,
         checkWeapon(src, item)
     end
 
-    -- Integración DP-RealMoney
     if GetResourceState("DP-RealMoney") ~= 'missing' then
         exports['DP-RealMoney']:UpdateCash(src, item, giveAmount, 'remove')
         exports['DP-RealMoney']:UpdateCash(target, item, giveAmount, 'add')
     end
 
-    -- Animaciones y avisos visuales en ambos extremos
     TriggerClientEvent('DP-Inventory:client:giveAnim', src)
     TriggerClientEvent('DP-Inventory:client:ItemBox', src, itemInfo, 'remove', giveAmount)
     TriggerClientEvent('DP-Inventory:client:giveAnim', target)
@@ -700,12 +630,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:giveItem', function(source,
     cb(true)
 end)
 
---- Solicita abrir una bolsa del suelo (como inventario secundario).
---- Validaciones: jugador existe, drop existe, no está ya abierto ni cogido,
---- jugador dentro de 2.5m.
----
---- @param dropId  string  ID del drop ('drop-XXXX')
---- @return        boolean
 QBCore.Functions.CreateCallback('DP-Inventory:server:requestOpenDrop', function(source, cb, dropId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -715,13 +639,12 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:requestOpenDrop', function(
         return
     end
 
-    -- Comprobación de proximidad
     if #(GetEntityCoords(GetPlayerPed(src)) - Drops[dropId].coords) > 2.5 then
         cb(false)
         return
     end
 
-    Drops[dropId].isOpen = src -- Registramos QUIÉN abrió la bolsa (lock)
+    Drops[dropId].isOpen = src
 
     local formattedInventory = {
         name = dropId,
@@ -735,11 +658,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:requestOpenDrop', function(
     cb(true)
 end)
 
---- Devuelve los nombres de personaje y Steam de una lista de server IDs.
---- Usado por la UI para mostrar jugadores cercanos al dar ítems.
----
---- @param serverIds  table  Array de server IDs a consultar
---- @return           table  Array de {id, name (RP), steam}
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetPlayerNames', function(source, cb, serverIds)
     local playersData = {}
 
@@ -753,8 +671,8 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetPlayerNames', function(s
 
             table.insert(playersData, {
                 id = id,
-                name = charName, -- Nombre del personaje (Roleplay)
-                steam = steamName -- Nombre de Steam (identificación real)
+                name = charName,
+                steam = steamName
             })
         end
     end
@@ -762,28 +680,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetPlayerNames', function(s
     cb(playersData)
 end)
 
--- ============================================================
---  [7] LÓGICA DE MOVIMIENTO DE ÍTEMS (ANTI-DUPE)
---  Gestiona todo movimiento de ítems entre inventarios:
---  · drag & drop completo    → mover
---  · mismo ítem en destino   → apilar
---  · cantidad < total origen → dividir (split)
---  · ambos slots con ítems distintos → intercambiar (swap)
---  Todas las operaciones pasan por RemoveItem + AddItem del
---  servidor para que sean la autoridad única (anti-dupe).
--- ============================================================
-
--- ==========================================
--- ITEM MOVE LOGIC (ANTI-DUPE)
--- ==========================================
-
---- Helper: obtiene el ítem en un slot concreto de cualquier inventario.
---- Soporta: 'player', 'otherplayer-ID', 'drop-ID', cualquier stash.
----
---- @param inventoryId  string  Identificador del inventario
---- @param src          number  Server ID del jugador (para resolver 'player')
---- @param slot         number  Número de slot a buscar
---- @return             table|nil  Tabla del ítem, o nil si no existe
 local function getItem(inventoryId, src, slot)
     local items = {}
     if inventoryId == 'player' then
@@ -815,12 +711,6 @@ local function getItem(inventoryId, src, slot)
     return nil
 end
 
---- Helper: traduce un inventoryId al identificador real que usan AddItem/RemoveItem.
---- 'player' → server ID numérico | 'otherplayer-ID' → ID numérico | stash → string
----
---- @param inventoryId  string  Identificador del inventario
---- @param src          number  Server ID del jugador local
---- @return             number|string
 local function getIdentifier(inventoryId, src)
     if inventoryId == 'player' then
         return src
@@ -831,44 +721,23 @@ local function getIdentifier(inventoryId, src)
     end
 end
 
---- Procesa TODO movimiento de ítems entre slots/inventarios desde la UI.
---- Es el evento más crítico del servidor: cualquier drag&drop pasa por aquí.
----
---- OPERACIONES POSIBLES:
----   · Apilar    → fromItem.name == toItem.name (mismo ítem en destino)
----   · Dividir   → toAmount < fromAmount y destino vacío
----   · Intercambiar → ambos slots ocupados con ítems distintos
----   · Mover     → destino vacío, mover cantidad completa
----
---- FILTROS ANTI-DUPE:
----   · Cantidades negativas bloqueadas
----   · Mismo inventario + mismo slot bloqueado
----   · toAmount > fromItem.amount bloqueado (no puedes mover más de lo que hay)
----   · Movimientos a tiendas bloqueados
----
---- Tras el movimiento, comprueba si se afectó el slot 101 (mochila expansora)
---- y dispara CheckBackpackUnequip si es necesario.
 RegisterNetEvent('DP-Inventory:server:SetInventoryData',
     function(fromInventory, toInventory, fromSlot, toSlot, fromAmount, toAmount)
         local src = source
 
-        -- Bloquea movimientos hacia tiendas (las tiendas son de solo lectura)
         if toInventory:find('shop%-') then
             return
         end
 
-        -- Validación de parámetros completos
         if not fromInventory or not toInventory or not fromSlot or not toSlot or not fromAmount or not toAmount then
             return
         end
 
-        -- Sanitizamos todos los valores numéricos (anti-injection)
         fromSlot = math.floor(tonumber(fromSlot) or 0)
         toSlot = math.floor(tonumber(toSlot) or 0)
         fromAmount = math.floor(tonumber(fromAmount) or 0)
         toAmount = math.floor(tonumber(toAmount) or 0)
 
-        -- FILTRO ANTI-DUPE: cantidades negativas o movimiento al mismo slot exacto
         if fromAmount < 0 or toAmount < 0 then
             return
         end
@@ -885,13 +754,10 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
         local toItem = getItem(toInventory, src, toSlot)
 
         if fromItem then
-            -- FILTRO ANTI-DUPE: no se puede mover más cantidad de la que hay
             if not toItem and toAmount > fromItem.amount then
                 return
             end
 
-            -- Si el jugador saca algo de su propio inventario hacia otro,
-            -- comprobamos si era un arma para quitársela de la mano
             if fromInventory == 'player' and toInventory ~= 'player' then
                 checkWeapon(src, fromItem)
             end
@@ -899,7 +765,6 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
             local fromId = getIdentifier(fromInventory, src)
             local toId = getIdentifier(toInventory, src)
 
-            -- ── APILAR: mismo ítem en destino ──
             if toItem and fromItem.name == toItem.name then
                 if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'stacked item', true) then
                     AddItem(toId, toItem.name, toAmount, toSlot, toItem.info, 'stacked item', true)
@@ -909,7 +774,6 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                     end
                 end
 
-                -- ── DIVIDIR: cantidad parcial a slot vacío ──
             elseif not toItem and toAmount < fromAmount then
                 if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'split item', true) then
                     AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'split item', true)
@@ -920,7 +784,6 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                 end
 
             else
-                -- ── INTERCAMBIAR: dos slots ocupados con ítems distintos ──
                 if toItem then
                     local fromItemAmount = fromItem.amount
                     local toItemAmount = toItem.amount
@@ -937,7 +800,6 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
                         end
                     end
 
-                    -- ── MOVER: slot destino vacío, cantidad completa ──
                 else
                     if RemoveItem(fromId, fromItem.name, toAmount, fromSlot, 'moved item', true) then
                         AddItem(toId, fromItem.name, toAmount, toSlot, fromItem.info, 'moved item', true)
@@ -950,30 +812,16 @@ RegisterNetEvent('DP-Inventory:server:SetInventoryData',
             end
         end
 
-        -- Si el movimiento afectó el slot 101 (mochila expansora), ejecutamos
-        -- la comprobación de desbordamiento de inventario
         if (fromInventory == 'player' and fromSlot == 101) or (toInventory == 'player' and toSlot == 101) then
-            Wait(100) -- Pequeño wait para asegurar que SetInventoryData terminó de guardar
-            CheckBackpackUnequip(src) -- De backpack_sv.lua
+            Wait(100)
+            CheckBackpackUnequip(src)
         end
     end)
 
--- ============================================================
---  [8] SISTEMA ADMIN
--- ============================================================
-
---- Comprueba si el jugador tiene permisos de admin o god en QBCore.
---- Devuelve true si tiene cualquiera de los dos niveles.
 QBCore.Functions.CreateCallback('DP-Inventory:server:IsAdmin', function(source, cb)
     cb(QBCore.Functions.HasPermission(source, 'admin') or QBCore.Functions.HasPermission(source, 'god'))
 end)
 
---- Recopila todos los inventarios del servidor categorizados para el panel admin:
----   · players    → jugadores online con nombre RP y Steam
----   · trunks     → identificadores que empiezan por 'trunk-'
----   · gloveboxes → identificadores que empiezan por 'glovebox-'
----   · stashes    → resto de identificadores
---- Solo accesible para admin/god.
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetAdminMasterData', function(source, cb)
     if not (QBCore.Functions.HasPermission(source, 'admin') or QBCore.Functions.HasPermission(source, 'god')) then
         return cb(false)
@@ -991,7 +839,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetAdminMasterData', functi
         end
     end
 
-    -- Consultamos la BD para categorizar todos los inventarios guardados
     MySQL.query('SELECT identifier FROM inventories', {}, function(result)
         local trunks, gloveboxes, stashes = {}, {}, {}
         if result then
@@ -1015,21 +862,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetAdminMasterData', functi
     end)
 end)
 
--- ============================================================
---  [9] PREFERENCIAS DE USUARIO (BD: dp_preferences)
---  Tabla: dp_preferences (citizenid, inventory_position,
---                         move_while_open, ui_sounds)
---  Todas las preferencias se guardan por citizenid y persisten
---  entre sesiones. Usan INSERT ... ON DUPLICATE KEY UPDATE
---  para crear la fila si no existe.
--- ============================================================
-
--- ==========================================================================
--- PREFERENCIAS DE POSICIÓN DEL INVENTARIO
--- ==========================================================================
-
---- Obtiene la posición visual del inventario del jugador.
---- @return  string  'bottom' (por defecto) u otra posición guardada
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetPosition', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then
@@ -1041,12 +873,10 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetPosition', function(sour
     if result[1] and result[1].inventory_position then
         cb(result[1].inventory_position)
     else
-        cb('bottom') -- Valor por defecto
+        cb('bottom')
     end
 end)
 
---- Guarda la posición visual del inventario.
---- Usa ON DUPLICATE KEY UPDATE para crear la fila si aún no existe.
 RegisterNetEvent('DP-Inventory:server:SavePosition', function(pos)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -1059,9 +889,6 @@ RegisterNetEvent('DP-Inventory:server:SavePosition', function(pos)
         {Player.PlayerData.citizenid, pos, pos})
 end)
 
---- Obtiene la preferencia de moverse con el inventario abierto.
---- @return  boolean  false por defecto
--- Obtener la preferencia de movimiento
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetMovePref', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then
@@ -1071,14 +898,12 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetMovePref', function(sour
     local result = MySQL.Sync.fetchAll('SELECT move_while_open FROM dp_preferences WHERE citizenid = ?',
         {Player.PlayerData.citizenid})
     if result[1] and result[1].move_while_open ~= nil then
-        cb(result[1].move_while_open == 1) -- BD guarda 0/1; devolvemos boolean
+        cb(result[1].move_while_open == 1)
     else
         cb(false)
     end
 end)
 
---- Guarda la preferencia de movimiento. Convierte boolean → 0/1 para la BD.
--- Guardar la preferencia de movimiento
 RegisterNetEvent('DP-Inventory:server:SaveMovePref', function(status)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -1091,10 +916,6 @@ RegisterNetEvent('DP-Inventory:server:SaveMovePref', function(status)
         {val, Player.PlayerData.citizenid})
 end)
 
---- Obtiene la preferencia de sonidos de la UI.
---- Si no existe entrada en BD, la crea con valor 1 (sonidos activados).
---- @return  boolean  true por defecto
--- Obtener preferencia de sonidos al cargar el personaje
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetSoundPref', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then
@@ -1104,9 +925,8 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetSoundPref', function(sou
     MySQL.Async.fetchAll('SELECT ui_sounds FROM dp_preferences WHERE citizenid = ?', {Player.PlayerData.citizenid},
         function(result)
             if result[1] ~= nil then
-                cb(result[1].ui_sounds == 1) -- 1 = true, 0 = false
+                cb(result[1].ui_sounds == 1)
             else
-                -- Primera vez del jugador: insertamos con sonidos activados por defecto
                 MySQL.Async.execute(
                     'INSERT INTO dp_preferences (citizenid, ui_sounds) VALUES (?, 1) ON DUPLICATE KEY UPDATE ui_sounds=1',
                     {Player.PlayerData.citizenid})
@@ -1115,8 +935,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:GetSoundPref', function(sou
         end)
 end)
 
---- Guarda la preferencia de sonidos. Usa UPSERT para crear la fila si no existe.
--- Guardar la preferencia cuando el jugador hace clic en el interruptor
 RegisterNetEvent('DP-Inventory:server:SaveSoundPref', function(status)
     local Player = QBCore.Functions.GetPlayer(source)
     if not Player then
@@ -1127,4 +945,313 @@ RegisterNetEvent('DP-Inventory:server:SaveSoundPref', function(status)
     MySQL.Async.execute(
         'INSERT INTO dp_preferences (citizenid, ui_sounds) VALUES (?, ?) ON DUPLICATE KEY UPDATE ui_sounds=?',
         {Player.PlayerData.citizenid, val, val})
+end)
+
+local function isInvAdmin(src)
+    return QBCore.Functions.HasPermission(src, 'admin') or QBCore.Functions.HasPermission(src, 'god')
+end
+
+local migrateCmd = (Config.Database and Config.Database.migrateCommand) or 'dpinv_migrate'
+local dropLegacyCmd = (Config.Database and Config.Database.dropLegacyCommand) or 'dpinv_drop_legacy'
+
+QBCore.Commands.Add(migrateCmd, 'Migrar qb/lj inventory → DP-Inventory (glovebox/stash/trunk)', {}, false,
+    function(source)
+        if source ~= 0 and not isInvAdmin(source) then
+            return
+        end
+        local n = RunLegacyMigration()
+        local msg = ('[DP-Inventory] Migración finalizada. Filas insertadas/ignoradas: %s'):format(tostring(n))
+        print('^2' .. msg .. '^7')
+        if source ~= 0 then
+            TriggerClientEvent('QBCore:Notify', source, msg, 'success')
+        end
+    end, 'admin')
+
+QBCore.Commands.Add(dropLegacyCmd, 'Borrar tablas legacy gloveboxitems/stashitems/trunkitems', {{
+    name = 'confirm',
+    help = 'Escribe confirm para ejecutar'
+}}, false, function(source, args)
+    if source ~= 0 and not isInvAdmin(source) then
+        return
+    end
+    local needConfirm = not (Config.Database and Config.Database.dropLegacyRequiresConfirm == false)
+    if needConfirm and (not args[1] or args[1]:lower() ~= 'confirm') then
+        local msg = 'Uso: /' .. dropLegacyCmd .. ' confirm'
+        if source ~= 0 then
+            TriggerClientEvent('QBCore:Notify', source, msg, 'error')
+        else
+            print(msg)
+        end
+        return
+    end
+    DropLegacyTables()
+    local msg = '[DP-Inventory] Tablas legacy eliminadas.'
+    print('^3' .. msg .. '^7')
+    if source ~= 0 then
+        TriggerClientEvent('QBCore:Notify', source, msg, 'success')
+    end
+end, 'admin')
+
+local TestStashPool = { -- raros / interesantes para probar el fog
+{
+    name = 'weapon_katana',
+    amount = 1
+}, {
+    name = 'weapon_battleaxe',
+    amount = 1
+}, {
+    name = 'weapon_switchblade',
+    amount = 1
+}, {
+    name = 'weapon_dagger',
+    amount = 1
+}, {
+    name = 'weapon_stone_hatchet',
+    amount = 1
+}, {
+    name = 'heavyarmor',
+    amount = 1
+}, {
+    name = 'armor',
+    amount = 2
+}, {
+    name = 'cryptostick',
+    amount = 1
+}, {
+    name = 'gpu4090',
+    amount = 1
+}, {
+    name = 'gpu5090',
+    amount = 1
+}, {
+    name = 'gpu3060',
+    amount = 1
+}, {
+    name = 'laptop',
+    amount = 1
+}, {
+    name = 'radioscanner',
+    amount = 1
+}, {
+    name = 'bodycam',
+    amount = 1
+}, {
+    name = 'police_stormram',
+    amount = 1
+}, {
+    name = 'security_card_02',
+    amount = 2
+}, {
+    name = 'security_card_01',
+    amount = 3
+}, {
+    name = 'weaponlicense',
+    amount = 1
+}, {
+    name = 'lawyerpass',
+    amount = 1
+}, {
+    name = 'moneybag',
+    amount = 1
+}, {
+    name = 'black_money',
+    amount = 5000
+}, {
+    name = 'cash',
+    amount = 2500
+}, {
+    name = 'dendrogyra_coral',
+    amount = 3
+}, {
+    name = 'antipatharia_coral',
+    amount = 2
+}, {
+    name = 'diving_gear',
+    amount = 1
+}, {
+    name = 'parachute',
+    amount = 1
+}, {
+    name = 'binoculars',
+    amount = 1
+}, {
+    name = 'racing_gps',
+    amount = 1
+}, {
+    name = 'newscam',
+    amount = 1
+}, {
+    name = 'speaker',
+    amount = 1
+}, {
+    name = 'skateboard',
+    amount = 1
+}, {
+    name = 'item_bench',
+    amount = 1
+}, {
+    name = 'attachment_bench',
+    amount = 1
+}, {
+    name = 'handcuffs',
+    amount = 2
+}, {
+    name = 'radio',
+    amount = 1
+}, {
+    name = 'phone',
+    amount = 1
+}, {
+    name = 'sim_card',
+    amount = 1
+}, {
+    name = 'custom_bag_1',
+    amount = 1
+}, {
+    name = 'custom_bag_2',
+    amount = 1
+}, {
+    name = 'steel',
+    amount = 10
+}, {
+    name = 'aluminum',
+    amount = 8
+}, {
+    name = 'copper',
+    amount = 12
+}, {
+    name = 'iron',
+    amount = 6
+}, {
+    name = 'plastic',
+    amount = 15
+}, {
+    name = 'rubber',
+    amount = 10
+}, {
+    name = 'glass',
+    amount = 8
+}, {
+    name = 'thermalpast',
+    amount = 3
+}, {
+    name = 'animal_medkit',
+    amount = 2
+}, {
+    name = 'lotto',
+    amount = 5
+}}
+
+local function ShuffleTable(t)
+    local n = #t
+    for i = n, 2, -1 do
+        local j = math.random(i)
+        t[i], t[j] = t[j], t[i]
+    end
+    return t
+end
+
+local function BuildRandomStashItems(maxSlots, fillCount)
+    local pool = {}
+    for i = 1, #TestStashPool do
+        pool[i] = TestStashPool[i]
+    end
+    ShuffleTable(pool)
+
+    local items = {}
+    local count = math.min(fillCount or maxSlots, maxSlots, #pool)
+    local usedSlots = {}
+
+    for i = 1, count do
+        local entry = pool[i]
+        local itemInfo = QBCore.Shared.Items[entry.name]
+        if itemInfo then
+            local slot
+            repeat
+                slot = math.random(1, maxSlots)
+            until not usedSlots[slot]
+            usedSlots[slot] = true
+
+            local info = {}
+            if itemInfo.type == 'weapon' then
+                info.quality = math.random(40, 100)
+                info.serie = ('TEST-%s-%04d'):format(string.upper(string.sub(entry.name, 8, 12) or 'WPN'),
+                    math.random(1000, 9999))
+            end
+            if entry.name == 'phone' then
+                info.imei = tostring(math.random(100000000000000, 999999999999999))
+            end
+            if entry.name == 'custom_bag_1' or entry.name == 'custom_bag_2' then
+                info.bagid = ('bag_test_%s_%d'):format(entry.name, math.random(10000, 99999))
+            end
+
+            items[slot] = {
+                name = itemInfo.name,
+                amount = entry.amount or 1,
+                info = info,
+                label = itemInfo.label,
+                description = itemInfo.description or '',
+                weight = itemInfo.weight,
+                type = itemInfo.type,
+                unique = itemInfo.unique,
+                useable = itemInfo.useable,
+                image = itemInfo.image,
+                slot = slot
+            }
+        end
+    end
+    return items
+end
+
+local function EnsureTestStashSeeded(stashId, label, maxweight, slots, fillCount)
+    local inv = Inventories[stashId]
+    local empty = true
+    if inv and inv.items then
+        for _, _ in pairs(inv.items) do
+            empty = false
+            break
+        end
+    end
+
+    if not inv then
+        Inventories[stashId] = {
+            items = {},
+            isOpen = false,
+            label = label,
+            maxweight = maxweight,
+            slots = slots
+        }
+        inv = Inventories[stashId]
+        empty = true
+    end
+
+    if empty then
+        inv.items = BuildRandomStashItems(slots, fillCount)
+        inv.label = label
+        inv.maxweight = maxweight
+        inv.slots = slots
+        -- persistir en DB para que sobreviva reinicios
+        MySQL.prepare('INSERT INTO inventories (identifier, items) VALUES (?, ?) ON DUPLICATE KEY UPDATE items = ?',
+            {stashId, json.encode(inv.items), json.encode(inv.items)})
+        print(('[DP-Inventory] Test stash %s rellenado con items aleatorios.'):format(stashId))
+    end
+end
+
+RegisterNetEvent('DP-Inventory:server:OpenTestStash', function(stashId)
+    local src = source
+    if stashId == 'stash_pruebas_peque' then
+        EnsureTestStashSeeded('stash_pruebas_peque', 'Armario Pequeño', 100000, 12, 4)
+        OpenInventory(src, 'stash_pruebas_peque', {
+            label = 'Armario Pequeño',
+            maxweight = 100000,
+            slots = 12
+        })
+    else
+        EnsureTestStashSeeded('stash_pruebas', 'Armario de Pruebas', 500000, 39, 28)
+        OpenInventory(src, 'stash_pruebas', {
+            label = 'Armario de Pruebas',
+            maxweight = 500000,
+            slots = 39
+        })
+    end
 end)

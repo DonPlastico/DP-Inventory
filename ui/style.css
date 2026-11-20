@@ -1,24 +1,24 @@
 @import url("https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&display=swap");
 
 :root {
-    /* --- COLORES PRINCIPALES --- */
+    
     --primary: #999999;
 
-    /* --- ESTADOS (Éxito, Peligro, Aviso) --- */
+    
     --success: #0ea021;
     --danger: #ff4444;
     --danger-text: #ffcccc;
 
-    /* --- FONDOS --- */
+    
     --bg-panel: rgba(0, 0, 0, 0.8);
 
-    /* --- TEXTOS --- */
+    
     --text-main: #ffffff;
     --text-secondary: #cccccc;
     --text-muted: #888888;
     --text-placeholder: #aaaaaa;
 
-    /* --- MÍOS --- */
+    
     --primary-color: rgba(255, 255, 255, 1);
     --secondary-color: rgba(255, 255, 255, 0.8);
     --hotbar: rgba(255, 255, 255, 0.7);
@@ -91,8 +91,9 @@ div {
 
 .inventory-container {
     height: 100vh;
-    max-height: 100vh;
     width: 100vw;
+    max-height: 100vh;
+    max-width: 100vw;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -115,8 +116,12 @@ div {
     position: relative;
     width: 20vw;
     height: auto;
-    max-height: 100%;
+    max-width: 21vw;
+    max-height: calc(100vh - 10px);
     min-height: 0;
+    min-width: 20vw;
+    
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
@@ -127,6 +132,7 @@ div {
 
 .player-inventory-section,
 .other-inventory-section,
+.bag-inventory-section,
 .centered-inventory-section {
     top: auto !important;
     left: auto !important;
@@ -137,12 +143,14 @@ div {
 
 .player-inventory-section {
     border-radius: 0 4px 4px 0;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
+    
 }
 
 .other-inventory-section {
     animation: slideUpOther 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-    flex: 0 2 auto;
+    flex: 0 0 auto;
+    
 }
 
 .inventory-header {
@@ -234,13 +242,16 @@ div {
 }
 
 .item-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
     gap: 2px;
     align-content: flex-start;
     width: 100%;
     box-sizing: border-box;
-    justify-content: space-between;
+}
+
+.item-grid .item-slot {
+    width: 100%;
 }
 
 .item-slot {
@@ -292,9 +303,6 @@ div {
     font-size: 15px;
 }
 
-/* =========================================
-   BUSCADOR DESPLEGABLE (ANCHO COMPLETO)
-   ========================================= */
 .weight-icon-btn.search-btn-active {
     background-color: var(--primary-color);
     color: var(--bg-panel);
@@ -511,15 +519,46 @@ div {
     margin: 0;
 }
 
-.weight-bar {
+.weight-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     width: 100%;
-    margin-top: -5px;
-    margin-bottom: 10px;
-    background-color: var(--border-color);
+    margin-bottom: 6px;
+}
+
+.weight-icon-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5vh;
+    height: 1.5vh;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 1.3vh;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.weight-icon-mini:hover {
+    color: #ffffff;
+    transform: scale(1.1);
+}
+
+.weight-bar {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    margin-bottom: 0;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    transition: background-color 0.2s ease;
 }
 
 .weight-bar-fill {
-    height: 1px;
+    height: 100%;
+    border-radius: 3px;
     transition: width 0.3s ease, background-color 0.3s ease;
 }
 
@@ -674,18 +713,14 @@ div {
     text-shadow: 0 1px 2px var(--bg-panel);
 }
 
-/* ==========================================================
-   SISTEMA DE NOTIFICACIONES MONOCROMÁTICO UNIFICADO (COMPACTO)
-   ========================================================== */
-
 .notification-container {
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 6px;
-    /* Separación más ajustada */
+    
     position: fixed;
-    /* Bajamos la posición (evita el chat) y pegamos a 5px de la izquierda */
+    
     top: 40%;
     left: 5px;
     z-index: 9999;
@@ -696,9 +731,9 @@ div {
     display: flex;
     align-items: center;
     width: 230px;
-    /* Más estrecho */
+    
     height: 45px;
-    /* Altura súper reducida */
+    
     border-radius: 4px;
     padding: 6px 8px;
     box-sizing: border-box;
@@ -712,11 +747,10 @@ div {
     transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-/* --- Columna Izquierda: Icono --- */
 .notif-left {
     flex-shrink: 0;
     width: 30px;
-    /* Foto mucho más pequeña */
+    
     height: 30px;
     display: flex;
     justify-content: center;
@@ -731,19 +765,17 @@ div {
     filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.1));
 }
 
-/* --- Columna Derecha: Información --- */
 .notif-right {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    /* Centramos el bloque de texto verticalmente */
+    
     gap: 3px;
-    /* Espacio mínimo entre el tag y el nombre */
+    
     height: 100%;
 }
 
-/* Fila superior (Estado + Cantidad) */
 .notif-top-row {
     display: flex;
     justify-content: space-between;
@@ -752,10 +784,9 @@ div {
     width: 100%;
 }
 
-/* Etiqueta de acción (Estilo Unificado) */
 .notif-action-tag {
     font-size: 8px;
-    /* Letra ultra pequeña */
+    
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -765,18 +796,16 @@ div {
     background: rgba(255, 255, 255, 0.08);
 }
 
-/* Cantidad */
 .notif-amount {
     font-size: 10px;
-    /* Número más pequeño */
+    
     font-weight: 800;
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* Nombre del Ítem */
 .notif-item-name {
     font-size: 11px;
-    /* Letra principal reducida */
+    
     font-weight: 800;
     text-transform: uppercase;
     color: #ffffff;
@@ -786,7 +815,6 @@ div {
     white-space: nowrap;
 }
 
-/* --- Animaciones de Vue --- */
 .slide-notif-enter-active,
 .slide-notif-leave-active,
 .slide-notif-move {
@@ -803,32 +831,28 @@ div {
     transform: translateX(-50px) scale(0.9);
 }
 
-/* ==========================================================
-   ÍTEMS REQUERIDOS (DISEÑO MONOCROMÁTICO COMPACTO)
-   ========================================================== */
-
 .required-item-container {
     display: flex;
     justify-content: center;
     position: fixed;
     bottom: 5vh;
-    /* Un poco más arriba para que respire */
+    
     left: 50%;
     transform: translateX(-50%);
     z-index: 9999;
     pointer-events: none;
-    /* Que no interrumpa clics en el juego */
+    
 }
 
 .required-item {
     display: flex;
     justify-content: center;
     gap: 8px;
-    /* Espaciado fijo y limpio entre tarjetas */
+    
     flex-wrap: wrap;
-    /* Si son muchos, que pasen a la siguiente línea */
+    
     max-width: 80vw;
-    /* Que no se salga de la pantalla */
+    
 }
 
 .required-item .item-slot {
@@ -839,15 +863,15 @@ div {
     justify-content: center;
 
     width: 65px;
-    /* Tarjeta compacta */
+    
     height: 75px;
     border-radius: 4px;
     box-sizing: border-box;
     overflow: hidden;
     margin: 0;
-    /* Quitamos el margin-left viejo que descuadraba todo */
+    
 
-    /* Estilo oscuro monocromático (como el resto del inventario) */
+    
     background: rgba(0, 0, 0, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.02);
@@ -855,13 +879,13 @@ div {
 
 .required-item .item-slot-img {
     width: 35px;
-    /* Imagen más pequeña y proporcionada */
+    
     height: 35px;
     display: flex;
     justify-content: center;
     align-items: center;
     margin-bottom: 12px;
-    /* Espacio para la etiqueta de texto inferior */
+    
 }
 
 .required-item .item-slot-img img {
@@ -869,7 +893,7 @@ div {
     max-height: 100%;
     object-fit: contain;
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
-    /* Sombra para que destaque sobre el negro */
+    
 }
 
 .required-item .item-slot-label {
@@ -878,7 +902,7 @@ div {
     width: 100%;
     height: 18px;
     background: rgba(255, 255, 255, 0.05);
-    /* Banda inferior sutil */
+    
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
     justify-content: center;
@@ -890,7 +914,7 @@ div {
 .required-item .item-slot-label p {
     margin: 0;
     font-size: 8px;
-    /* Texto ultra-compacto */
+    
     font-weight: 800;
     color: #ffffff;
     text-transform: uppercase;
@@ -898,7 +922,7 @@ div {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* Puntos suspensivos si el nombre es kilométrico */
+    
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
@@ -1437,7 +1461,6 @@ div {
     letter-spacing: 0.6px;
 }
 
-
 .wip-meta-val {
     font-size: 15px;
     color: white;
@@ -1603,7 +1626,6 @@ div {
     opacity: 0.4;
 }
 
-
 .invalid-slot-highlight {
     border: 2px solid #b3261e !important;
 }
@@ -1704,7 +1726,6 @@ div {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 5px;
     padding-bottom: 5px;
     min-height: 30px;
     flex-shrink: 0;
@@ -2509,6 +2530,7 @@ input:checked+.slider:before {
     justify-content: flex-end;
     align-items: flex-end;
     gap: 5px;
+    padding-right: 5px;
 }
 
 .inventory-container.layout-top {
@@ -2516,13 +2538,16 @@ input:checked+.slider:before {
     justify-content: flex-start;
     align-items: flex-end;
     gap: 5px;
+    padding-right: 5px;
 }
 
 .inventory-container.layout-left {
-    flex-direction: row-reverse;
-    justify-content: flex-start;
+    flex-direction: row;
+    justify-content: flex-end;
     align-items: flex-end;
-    gap: 7.5vh;
+    gap: 5px;
+    padding-right: 5px;
+    padding-left: 5px;
 }
 
 .inventory-container.layout-right {
@@ -2530,6 +2555,31 @@ input:checked+.slider:before {
     justify-content: flex-end;
     align-items: flex-end;
     gap: 5px;
+    padding-right: 5px;
+}
+
+.inventory-container .bag-inventory-section {
+    order: 0;
+}
+
+.inventory-container .other-inventory-section {
+    order: 1;
+}
+
+.inventory-container .secondary-panels-wrapper {
+    order: 1;
+}
+
+.inventory-container .player-inventory-section {
+    order: 100;
+}
+
+.secondary-panels-wrapper.middle-pair-column .other-inventory-section {
+    order: 1;
+}
+
+.secondary-panels-wrapper.middle-pair-column .bag-inventory-section {
+    order: 2;
 }
 
 .settings-select {
@@ -2732,7 +2782,7 @@ input:checked+.slider:before {
 .sim-overlay-icon {
     position: absolute;
     bottom: 0px;
-    /* Lo pegamos un poquito abajo */
+    
     right: 0px;
     width: 20px;
     height: auto;
@@ -2745,30 +2795,22 @@ input:checked+.slider:before {
     transform: rotate(-15deg);
 }
 
-/* ============================================================
-   MODO COMBINAR SIM (FASE 3)
-   ============================================================ */
-
-/* Cuando estamos en modo combinar, el cursor general es una mira */
 .inventory-container.sim-combine-mode {
     cursor: crosshair !important;
 }
 
-/* Los ítems que NO son compatibles se oscurecen y no reciben clics */
 .inventory-container.sim-combine-mode .item-slot:not(.sim-target):not(.sim-source) {
     opacity: 0.3;
     pointer-events: none;
     filter: grayscale(100%);
 }
 
-/* El ítem que hemos seleccionado como origen brilla en GRIS */
 .item-slot.sim-source {
     box-shadow: 0 0 15px 5px rgba(150, 150, 150, 0.6) !important;
     border: 1px solid #999999 !important;
     z-index: 5;
 }
 
-/* Los ítems compatibles (destino) brillan en BLANCO y laten */
 .item-slot.sim-target {
     box-shadow: 0 0 15px 5px rgba(255, 255, 255, 0.6) !important;
     border: 1px solid #ffffff !important;
@@ -2777,9 +2819,6 @@ input:checked+.slider:before {
     z-index: 5;
 }
 
-/* =========================================
-   PLACEHOLDER: ÍTEM SIN IMAGEN
-   ========================================= */
 .missing-img-placeholder {
     width: 100%;
     height: 100%;
@@ -2809,50 +2848,153 @@ input:checked+.slider:before {
     color: rgba(255, 255, 255, 0.35);
 }
 
+.layout-left .player-inventory-section:not(.centered-inventory-section) {
+    border-radius: 4px 4px 4px 0;
+}
 
+.bag-inventory-section {
+    animation: slideRightOther 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    flex: 0 0 auto;
+    
+}
 
+.bag-inventory-section .menu-footer {
+    height: 15px;
+}
 
+.inventory-container.layout-left:has(.bag-inventory-section) {
+    gap: 5px;
+    padding-left: 5px;
+}
 
+.inventory-container.layout-left.other-pos-left.bag-pos-left:has(.other-inventory-section):has(.bag-inventory-section) .bag-inventory-section {
+    margin-right: 0;
+}
 
+.inventory-container.layout-left .middle-pair-column .bag-inventory-section {
+    margin-right: 0 !important;
+}
 
+.inventory-container.layout-bottom .inventory-section,
+.inventory-container.layout-top .inventory-section {
+    flex-shrink: 0;
+}
 
+.inventory-container {
+    max-width: 100vw;
+    max-height: 100vh;
+}
 
+.inventory-section {
+    max-width: 21vw;
+    max-height: calc(100vh - 10px);
+}
 
+.secondary-panels-wrapper.as-contents {
+    display: contents;
+}
 
+.secondary-panels-wrapper.middle-pair-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    max-height: calc(100vh - 10px);
+    flex-shrink: 0;
+}
 
+.secondary-panels-wrapper.middle-pair-column .inventory-section {
+    max-height: 48vh;
+}
 
+.inventory-container .three-vertical-stack {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    max-height: calc(100vh - 10px);
+    flex-shrink: 0;
+}
 
+.inventory-container.layout-left .middle-pair-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    max-height: calc(100vh - 10px);
+    flex-shrink: 0;
+}
 
+.inventory-container.layout-left .middle-pair-column .inventory-section {
+    max-height: 48vh;
+}
 
+.inventory-container.layout-bottom .player-inventory-section {
+    margin-left: 0;
+    align-self: flex-end;
+}
 
+.inventory-container.layout-left .player-inventory-section {
+    margin-left: 7vh;
+    align-self: flex-end;
+}
 
+.inventory-container.layout-left.other-pos-left.bag-pos-left {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    padding-left: 5px;
+    padding-right: 5px;
+}
 
+.inventory-container.layout-left.other-pos-left.bag-pos-left .inventory-section {
+    
+    width: 20vw;
+    max-width: 21vw;
+    max-height: calc(100vh - 12px);
+    margin-right: 0;
+}
 
+.inventory-container.layout-left.other-pos-left.bag-pos-left .player-inventory-section {
+    
+}
 
+.inventory-container.layout-left.other-pos-left.bag-pos-left .bag-inventory-section {
+    margin-right: 0;
+}
 
+.inventory-container.other-pos-left.bag-pos-stacked,
+.inventory-container.other-pos-stacked.bag-pos-left {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    padding-left: 5px;
+    padding-right: 5px;
+}
 
+.stacked-vertical-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 5px;
+    max-height: calc(100vh - 10px);
+    flex-shrink: 0;
+}
 
+.stacked-vertical-column.stack-dir-top {
+    flex-direction: column-reverse;
+    justify-content: flex-start;
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+.stacked-vertical-column .inventory-section {
+    max-height: 48vh;
+}
 
 @keyframes simPulse {
     from {
@@ -2962,4 +3104,163 @@ input:checked+.slider:before {
     50% {
         transform: translateY(-5px);
     }
+}
+
+/* Bag content preview inside tooltip */
+.bag-preview-block {
+    margin: 8px 0 6px 0;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+}
+
+.bag-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 0.85vh;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.bag-preview-header .bag-preview-count {
+    color: #ffffff;
+    font-weight: 900;
+}
+
+.bag-preview-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 0 6px 0;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.9vh;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.bag-preview-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-top-color: rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    animation: bagSpin 0.7s linear infinite;
+}
+
+@keyframes bagSpin {
+    to { transform: rotate(360deg); }
+}
+
+.bag-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.bag-preview-slot--empty {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.bag-preview-slot {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.bag-preview-slot img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
+
+.bag-preview-slot .amt {
+    position: absolute;
+    top: 1px;
+    right: 2px;
+    font-size: 0.65vh;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 1px 2px #000;
+}
+
+.bag-preview-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 8px 0;
+    font-size: 0.85vh;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.bag-preview-weight {
+    margin-top: 6px;
+    text-align: center;
+    font-size: 0.8vh;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+
+/* ── Inventory discovery / fog of war ── */
+.item-slot.slot-fogged {
+    cursor: pointer;
+}
+.item-slot.slot-fogged .item-slot-img,
+.item-slot.slot-fogged .item-slot-amount,
+.item-slot.slot-fogged .item-slot-durability,
+.item-slot.slot-fogged .item-price {
+    display: none !important;
+}
+.fog-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 8, 8, 0.92);
+    border-radius: 4px;
+    z-index: 20;
+    pointer-events: none;
+}
+.fog-overlay .fog-q {
+    font-size: 2.4vh;
+    font-weight: 900;
+    color: rgba(255, 255, 255, 0.55);
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+    line-height: 1;
+    user-select: none;
+}
+.item-slot.slot-revealing .fog-overlay {
+    background: rgba(10, 10, 10, 0.95);
+}
+.fog-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-top-color: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    animation: bagSpin 0.65s linear infinite;
+}
+.item-slot.slot-fogged:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.12);
+}
+.item-slot.slot-fogged:hover .fog-q {
+    color: rgba(255, 255, 255, 0.85);
 }

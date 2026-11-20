@@ -1,25 +1,11 @@
--- ============================================================
---  DP-INVENTORY · server/sim.lua
---  Sistema de combinación/separación de SIM entre 'phone' y 'sim_card'.
---
---  Reglas:
---   · La BD es la única fuente de verdad de si una SIM está
---     insertada (dp_phone_sim.imei).
---   · No se mueven filas de contactos/mensajes (ya indexados por sim_number).
---   · El servidor NO confía en el cliente: recibe solo slots y
---     vuelve a leer los items reales del inventario.
---   · Q2 confirmado: 'activated' = "insertada y operativa" (igual que DP-Phone).
---     Se pone a 1 al insertar y a 0 al extraer.
--- ============================================================
+-- DP-Inventory · server/sim.lua
+
 local PHONE_ITEM = 'phone'
 local SIM_ITEM = 'sim_card'
 
-local busy = {} -- [source] = true mientras se procesa una operación
-local lastAction = {} -- [source] = GetGameTimer() de la última acción
+local busy = {}
+local lastAction = {}
 
--- ============================================================
---  Utilidades
--- ============================================================
 local function debugPrint(...)
     if Config.Sim and Config.Sim.debug then
         print('^5[DP-Inventory:SIM]^7', ...)
@@ -60,9 +46,6 @@ local function notifyPhone(src, imei, simNumber)
     })
 end
 
--- ============================================================
---  Bloqueo + cooldown
--- ============================================================
 local function acquire(src)
     local now = GetGameTimer()
     if busy[src] then
@@ -86,16 +69,12 @@ AddEventHandler('playerDropped', function()
     lastAction[src] = nil
 end)
 
--- ============================================================
---  Combinar (insertar SIM)
--- ============================================================
 local function combineSim(src, phoneSlot, simSlot)
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then
         return fail('internal')
     end
 
-    -- Sanitización extrema (por si acaso llega string)
     phoneSlot = tonumber(phoneSlot)
     simSlot = tonumber(simSlot)
 
@@ -103,8 +82,6 @@ local function combineSim(src, phoneSlot, simSlot)
         return fail('invalid')
     end
 
-    -- Usamos la función GLOBAL del servidor. 
-    -- Esta función busca el ítem comprobando la propiedad "slot" de cada ítem en el inventario real.
     local phone = GetItemBySlot(src, phoneSlot)
     local sim = GetItemBySlot(src, simSlot)
 
@@ -124,7 +101,6 @@ local function combineSim(src, phoneSlot, simSlot)
     end
 
     if not simNumber then
-        -- LA SIM NO TIENE NÚMERO, SE LO GENERAMOS Y LA ACTIVAMOS EN LA BD AHORA MISMO
         local exists = true
         while exists do
             simNumber = string.format("%03d-%04d-%03d", math.random(100, 999), math.random(1000, 9999),
@@ -135,10 +111,8 @@ local function combineSim(src, phoneSlot, simSlot)
             end
         end
 
-        -- Insertamos en la BD (si no existe)
         MySQL.insert.await('INSERT IGNORE INTO dp_phone_sim (sim_number, activated) VALUES (?, 0)', {simNumber})
 
-        -- Actualizamos el ítem en el inventario del jugador
         if not sim.info then
             sim.info = {}
         end
@@ -177,7 +151,6 @@ local function combineSim(src, phoneSlot, simSlot)
     notifyPhone(src, imei, simNumber)
     debugPrint(('SIM %s insertada en %s (src %s)'):format(simNumber, imei, src))
 
-    -- AVISAR A LA UI DE QUE EL INVENTARIO HA CAMBIADO
     TriggerClientEvent('DP-Inventory:client:updateInventory', src)
 
     return {
@@ -185,9 +158,6 @@ local function combineSim(src, phoneSlot, simSlot)
     }
 end
 
--- ============================================================
---  Extraer (separar SIM)
--- ============================================================
 local function splitSim(src, phoneSlot)
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then
@@ -212,9 +182,6 @@ local function splitSim(src, phoneSlot)
         return fail('phone_no_imei')
     end
 
-    -- GANCHO(Q4): si algún día se exige PIN para extraer, aquí se consultaría
-    -- dp_phone_hardware.pin antes de continuar.
-
     local row = MySQL.single.await('SELECT sim_number FROM dp_phone_sim WHERE imei = ? LIMIT 1', {imei})
     if not row then
         return fail('phone_no_sim')
@@ -224,14 +191,12 @@ local function splitSim(src, phoneSlot)
         return fail('no_space')
     end
 
-    -- 1) BD primero. Q2: activated=0 igual que DP-Phone.
     local affected = MySQL.update.await(
         'UPDATE dp_phone_sim SET imei = NULL, activated = 0 WHERE sim_number = ? AND imei = ?', {row.sim_number, imei})
     if affected ~= 1 then
         return fail('phone_no_sim')
     end
 
-    -- 2) Entregar la SIM con su MISMO sim_number (isSilent=true)
     local addOk = AddItem(src, SIM_ITEM, 1, false, {
         sim_number = row.sim_number
     }, 'sim-extract', true)
@@ -245,7 +210,6 @@ local function splitSim(src, phoneSlot)
     notifyPhone(src, imei, nil)
     debugPrint(('SIM %s extraída de %s (src %s)'):format(row.sim_number, imei, src))
 
-    -- AVISAR A LA UI DE QUE EL INVENTARIO HA CAMBIADO
     TriggerClientEvent('DP-Inventory:client:updateInventory', src)
 
     return {
@@ -254,10 +218,8 @@ local function splitSim(src, phoneSlot)
 end
 
 QBCore.Functions.CreateCallback('DP-Inventory:combineSim', function(source, cb, phoneSlot, simSlot)
-    -- Ejecutamos la lógica envuelta pero SIN el sistema de notificaciones automático
     local result = combineSim(source, phoneSlot, simSlot)
-    
-    -- Si la lógica devuelve un éxito, devolvemos el objeto tal cual para que la UI se actualice
+
     cb(result)
 end)
 
@@ -266,9 +228,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:splitSim', function(source, cb, ph
     cb(result)
 end)
 
--- ============================================================
---  Consultas de estado (para precargar hasSim en cliente)
--- ============================================================
 QBCore.Functions.CreateCallback('DP-Inventory:hasSim', function(_, cb, imei)
     print("^3[DP-Inventory]^7 Callback hasSim llamado con IMEI: " .. tostring(imei))
     if type(imei) ~= 'string' or imei == '' then

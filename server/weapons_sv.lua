@@ -1,6 +1,6 @@
-local QBCore = exports['qb-core']:GetCoreObject()
+-- DP-Inventory · server/weapons.lua
 
--- Functions
+local QBCore = exports['qb-core']:GetCoreObject()
 
 local function IsWeaponBlocked(WeaponName)
     local retval = false
@@ -12,8 +12,6 @@ local function IsWeaponBlocked(WeaponName)
     end
     return retval
 end
-
--- Callback
 
 QBCore.Functions.CreateCallback('DP-Inventory:server:GetConfig', function(_, cb)
     cb(Config.WeaponRepairPoints)
@@ -123,8 +121,6 @@ QBCore.Functions.CreateCallback('prison:server:checkThrowable', function(source,
     cb(throwable)
 end)
 
--- Events
-
 RegisterNetEvent('DP-Inventory:server:UpdateWeaponAmmo', function(CurrentWeaponData, amount)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -211,8 +207,6 @@ RegisterNetEvent('DP-Inventory:server:removeWeaponAmmoItem', function(item)
     exports['DP-Inventory']:RemoveItem(source, item.name, 1, item.slot, 'DP-Inventory:server:removeWeaponAmmoItem')
 end)
 
--- Commands
-
 QBCore.Commands.Add('repairweapon', 'Repair Weapon (God Only)', {{
     name = 'hp',
     help = Lang:t('info.hp_of_weapon')
@@ -220,16 +214,11 @@ QBCore.Commands.Add('repairweapon', 'Repair Weapon (God Only)', {{
     TriggerClientEvent('DP-Inventory:client:SetWeaponQuality', source, tonumber(args[1]))
 end, 'god')
 
--- Items
-
--- AMMO
 for ammoItem, properties in pairs(Config.AmmoTypes) do
     QBCore.Functions.CreateUseableItem(ammoItem, function(source, item)
         TriggerClientEvent('DP-Inventory:client:AddAmmo', source, properties.ammoType, properties.amount, item)
     end)
 end
-
--- TINTS
 
 local function GetWeaponSlotByName(items, weaponName)
     for index, item in pairs(items) do
@@ -245,7 +234,6 @@ local function IsMK2Weapon(weaponHash)
     return string.find(weaponName, 'mk2') ~= nil
 end
 
--- Armas que NO soportan tints en GTA5 vanilla
 local noTintWeapons = {
     ['weapon_unarmed'] = true,
     ['weapon_flaregun'] = true,
@@ -285,35 +273,29 @@ local function EquipWeaponTint(source, tintIndex, item, isMK2)
         return
     end
 
-    -- Buscamos el arma en el inventario del jugador
-    -- GetSelectedPedWeapon en servidor no siempre sincroniza bien, así que buscamos en el inventario
     local weaponName = nil
     local weaponSlot = nil
     local weaponSlotIndex = nil
     local weaponCount = 0
 
-    -- Primero intentamos el arma que tiene en la mano según el servidor
     local ped = GetPlayerPed(source)
     local selectedHash = GetSelectedPedWeapon(ped)
 
     for index, invItem in pairs(Player.PlayerData.items) do
         if invItem and invItem.type == 'weapon' then
             weaponCount = weaponCount + 1
-            -- Si el hash del arma en inventario coincide con lo que tiene en mano, esa es
             if selectedHash ~= joaat('WEAPON_UNARMED') and joaat(invItem.name) == selectedHash then
                 weaponName = invItem.name
                 weaponSlot = invItem
                 weaponSlotIndex = index
                 break
             end
-            -- Guardamos la última arma encontrada por si solo tiene una
             weaponName = invItem.name
             weaponSlot = invItem
             weaponSlotIndex = index
         end
     end
 
-    -- Si tiene más de un arma y ninguna coincide con la mano, pedimos que la saque
     if weaponCount > 1 and (selectedHash == joaat('WEAPON_UNARMED') or joaat(weaponName) ~= selectedHash) then
         TriggerClientEvent('QBCore:Notify', source, 'Debes tener el arma en la mano para aplicar el tinte.', 'error')
         return
@@ -324,7 +306,6 @@ local function EquipWeaponTint(source, tintIndex, item, isMK2)
         return
     end
 
-    -- Comprobar si el arma acepta tintes
     if noTintWeapons[weaponName] then
         TriggerClientEvent('QBCore:Notify', source, 'Este arma no puede llevar tintes.', 'error')
         return
@@ -359,7 +340,6 @@ local function EquipWeaponTint(source, tintIndex, item, isMK2)
     TriggerClientEvent('QBCore:Notify', source, 'Tinte aplicado correctamente.', 'success')
 end
 
--- Tints normales (armas estándar) — todos los tints 0-7 con nombres amigables
 local standardTints = {{
     name = 'weapontint_black',
     index = 0
@@ -394,14 +374,11 @@ for _, tint in ipairs(standardTints) do
     end)
 end
 
--- Tints MK2 (solo armas MK2) — índices 0-32
 for i = 0, 32 do
     QBCore.Functions.CreateUseableItem('weapontint_mk2_' .. i, function(source, item)
         EquipWeaponTint(source, i, item.name, true)
     end)
 end
-
--- Attachments
 
 local function HasAttachment(component, attachments)
     for k, v in pairs(attachments) do
@@ -429,7 +406,6 @@ local function EquipWeaponAttachment(src, item)
         return
     end
 
-    -- Buscamos el nombre correcto del arma comparando los hashes
     local weaponName = nil
     for k, v in pairs(QBCore.Shared.Weapons) do
         if GetHashKey(k) == selectedWeaponHash then
@@ -518,8 +494,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:RemoveAttachment', function
     end
 end)
 
--- DP-Inventory: Callback para equipar accesorio desde el panel de armas (drag & drop)
--- Reutiliza la lógica de EquipWeaponAttachment pero sin requerir UseItem
 QBCore.Functions.CreateCallback('DP-Inventory:server:AddAttachment', function(source, cb, AttachmentItem, WeaponData)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
@@ -530,7 +504,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:AddAttachment', function(so
         return
     end
 
-    -- Verificar que el accesorio es compatible con esta arma
     local attachmentComponent = DoesWeaponTakeWeaponComponent(AttachmentItem.name, WeaponData.name)
     if not attachmentComponent then
         TriggerClientEvent('QBCore:Notify', src, Lang:t('error.no_support_attachment'), 'error')
@@ -540,7 +513,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:AddAttachment', function(so
         return
     end
 
-    -- Buscar el arma en el inventario del jugador por slot
     local weaponSlot, weaponSlotIndex = GetWeaponSlotByName(Player.PlayerData.items, WeaponData.name)
     if not weaponSlot then
         cb({
@@ -551,7 +523,6 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:AddAttachment', function(so
 
     weaponSlot.info.attachments = weaponSlot.info.attachments or {}
 
-    -- Comprobar que no tiene ya este accesorio
     local hasAttach = HasAttachment(attachmentComponent, weaponSlot.info.attachments)
     if hasAttach then
         TriggerClientEvent('QBCore:Notify', src, Lang:t('error.attachment_already_on_weapon', {
@@ -564,19 +535,16 @@ QBCore.Functions.CreateCallback('DP-Inventory:server:AddAttachment', function(so
         return
     end
 
-    -- Añadir el componente al arma en el inventario
     weaponSlot.info.attachments[#weaponSlot.info.attachments + 1] = {
         component = attachmentComponent
     }
     Player.PlayerData.items[weaponSlotIndex] = weaponSlot
     Player.Functions.SetInventory(Player.PlayerData.items, true)
 
-    -- Quitar el item del inventario del jugador
     exports['DP-Inventory']:RemoveItem(src, AttachmentItem.name, 1, AttachmentItem.slot,
         'DP-Inventory:server:AddAttachment')
     TriggerClientEvent('DP-Inventory:client:ItemBox', src, QBCore.Shared.Items[AttachmentItem.name], 'remove')
 
-    -- Devolver la lista actualizada de attachments para que el NUI la refleje
     cb({
         success = true,
         attachments = weaponSlot.info.attachments

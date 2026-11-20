@@ -1,9 +1,8 @@
--- Variables
+-- DP-Inventory · client/weapons.lua
+
 local QBCore = exports['qb-core']:GetCoreObject()
 local PlayerData = QBCore.Functions.GetPlayerData()
 local CurrentWeaponData, CanShoot, MultiplierAmount, currentWeapon = {}, true, 0, nil
-
--- Handlers
 
 AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
     PlayerData = QBCore.Functions.GetPlayerData()
@@ -22,8 +21,6 @@ RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
     end
 end)
 
--- Functions
-
 local function DrawText3Ds(x, y, z, text)
     SetTextScale(0.35, 0.35)
     SetTextFont(4)
@@ -38,8 +35,6 @@ local function DrawText3Ds(x, y, z, text)
     DrawRect(0.0, 0.0 + 0.0125, 0.017 + factor, 0.03, 0, 0, 0, 75)
     ClearDrawOrigin()
 end
-
--- Events
 
 RegisterNetEvent('DP-Inventory:client:SyncRepairShops', function(NewData, key)
     Config.WeaponRepairPoints[key].IsRepairing = NewData.IsRepairing
@@ -71,7 +66,6 @@ RegisterNetEvent('DP-Inventory:client:AddAmmo', function(ammoType, amount, itemD
     local weaponHash = GetSelectedPedWeapon(ped)
     local weaponName = nil
 
-    -- Buscamos el nombre del arma en tu tabla compartida comparando hashes
     for name, data in pairs(QBCore.Shared.Weapons) do
         if joaat(name) == weaponHash then
             weaponName = name
@@ -105,8 +99,7 @@ RegisterNetEvent('DP-Inventory:client:AddAmmo', function(ammoType, amount, itemD
             disableCarMovement = false,
             disableMouse = false,
             disableCombat = true
-        }, {}, {}, {}, function() -- Done
-            -- Verificamos de nuevo al terminar
+        }, {}, {}, {}, function()
             local currentHash = GetSelectedPedWeapon(ped)
             if joaat(weaponName) ~= currentHash then
                 return QBCore.Functions.Notify(Lang:t('error.wrong_ammo'), 'error')
@@ -189,8 +182,6 @@ RegisterNetEvent('DP-Inventory:client:CheckWeapon', function(weaponName)
     RemoveAllPedWeapons(ped, true)
     currentWeapon = nil
 end)
-
--- Threads
 
 CreateThread(function()
     SetWeaponsNoAutoswap(true)

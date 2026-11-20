@@ -1,5 +1,6 @@
+-- DP-Inventory · client/weaponsrecoil.lua
+
 local recoils = {
-    -- Handguns
     ['weapon_pistol'] = 0.3,
     ['weapon_pistol_mk2'] = 0.5,
     ['weapon_combatpistol'] = 0.2,
@@ -21,7 +22,6 @@ local recoils = {
     ['weapon_gadgetpistol'] = 0.3,
     ['weapon_pistolxm3'] = 0.4,
 
-    -- Submachine Guns
     ['weapon_microsmg'] = 0.5,
     ['weapon_smg'] = 0.4,
     ['weapon_smg_mk2'] = 0.1,
@@ -32,7 +32,6 @@ local recoils = {
     ['weapon_raycarbine'] = 0.3,
     ['weapon_tecpistol'] = 0.3,
 
-    -- Shotguns
     ['weapon_pumpshotgun'] = 0.4,
     ['weapon_sawnoffshotgun'] = 0.7,
     ['weapon_assaultshotgun'] = 0.4,
@@ -44,7 +43,6 @@ local recoils = {
     ['weapon_pumpshotgun_mk2'] = 0.4,
     ['weapon_combatshotgun'] = 0.0,
 
-    -- Assault Rifles
     ['weapon_assaultrifle'] = 0.5,
     ['weapon_assaultrifle_mk2'] = 0.2,
     ['weapon_carbinerifle'] = 0.3,
@@ -59,13 +57,11 @@ local recoils = {
     ['weapon_heavyrifle'] = 0.3,
     ['weapon_tacticalrifle'] = 0.2,
 
-    -- Light Machine Guns
     ['weapon_mg'] = 0.1,
     ['weapon_combatmg'] = 0.1,
     ['weapon_gusenberg'] = 0.1,
     ['weapon_combatmg_mk2'] = 0.1,
 
-    -- Sniper Rifles
     ['weapon_sniperrifle'] = 0.5,
     ['weapon_heavysniper'] = 0.7,
     ['weapon_marksmanrifle'] = 0.3,
@@ -74,7 +70,6 @@ local recoils = {
     ['weapon_marksmanrifle_mk2'] = 0.3,
     ['weapon_precisionrifle'] = 0.3,
 
-    -- Heavy Weapons
     ['weapon_rpg'] = 0.0,
     ['weapon_grenadelauncher'] = 1.0,
     ['weapon_grenadelauncher_smoke'] = 1.0,

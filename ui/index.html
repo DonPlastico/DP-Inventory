@@ -21,14 +21,21 @@
       <div
         class="inventory-container"
         v-if="isInventoryOpen"
-        :class="[{ 'cursor-mode': cursorModeActive, 'sim-combine-mode': simCombineState.isActive }, 'layout-' + effectiveInventoryPosition]"
+        :class="[
+          { 'cursor-mode': cursorModeActive, 'sim-combine-mode': simCombineState.isActive },
+          'layout-' + effectiveInventoryPosition,
+          'other-pos-' + panelPlacementPlan.otherPlacement,
+          'bag-pos-' + panelPlacementPlan.bagPlacement
+        ]"
         @mousemove="drag"
         @mouseup="endDrag"
         @mousedown="containerMouseDownAction">
         <div
           class="inventory-section player-inventory-section"
           :class="{ 'centered-inventory-section': shouldCenterInventory }">
-          <div class="tabs-sidebar">
+          <div
+            class="tabs-sidebar"
+            v-if="isOtherInventoryEmpty || effectiveInventoryPosition !== 'left'">
             <div
               class="tab-btn"
               :class="{ active: activeTab === 'inventory' }"
@@ -219,6 +226,11 @@
                 </div>
 
                 <div class="header-actions">
+                  <div class="header-amount-input">
+                    <label>CANTIDAD</label>
+                    <input type="number" v-model="transferAmount" min="0" placeholder="0" />
+                  </div>
+
                   <div
                     v-if="!showPlayerSearch"
                     class="weight-icon-btn"
@@ -226,24 +238,20 @@
                     v-tooltip.bottom="'Buscar ítem'">
                     <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
                   </div>
-
-                  <div class="header-amount-input">
-                    <label>CANTIDAD</label>
-                    <input type="number" v-model="transferAmount" min="0" placeholder="0" />
-                  </div>
-
-                  <div
-                    class="weight-icon-btn"
-                    v-tooltip.bottom="'Peso: ' + (playerWeight / 1000).toFixed(1) + ' / ' + (maxWeight / 1000).toFixed(1) + ' KG'">
-                    <iconify-icon icon="mdi:weight"></iconify-icon>
-                  </div>
                 </div>
               </div>
-              <div class="weight-bar">
+              <div class="weight-row" v-if="maxWeight > 0">
                 <div
-                  class="weight-bar-fill"
-                  :style="{ width: Math.min((playerWeight / maxWeight) * 100, 100) + '%' }"
-                  :class="weightBarClass"></div>
+                  class="weight-icon-mini"
+                  v-tooltip.bottom="{ content: generateWeightTooltip(playerWeight, maxWeight), html: true }">
+                  <iconify-icon icon="mdi:weight"></iconify-icon>
+                </div>
+                <div class="weight-bar">
+                  <div
+                    class="weight-bar-fill"
+                    :style="{ width: Math.min((playerWeight / maxWeight) * 100, 100) + '%' }"
+                    :class="weightBarClass"></div>
+                </div>
               </div>
               <div class="dropdown-search-row" :class="{ 'open': showPlayerSearch }">
                 <div class="dropdown-search-bar">
@@ -266,7 +274,6 @@
               </div>
 
               <div class="inventory-grid custom-scrollbar">
-                <!-- BLOQUE 1: SLOTS BASE (1 al 35) -->
                 <div class="item-grid">
                   <div
                     v-for="slot in basePlayerSlots"
@@ -304,7 +311,6 @@
                         </div>
                       </div>
 
-                      <!-- IMAGEN DE SIM EN EL SLOT -->
                       <div
                         v-if="getItemInSlot(slot, 'player').name === 'phone' && getItemInSlot(slot, 'player').hasSim"
                         class="sim-overlay-icon"
@@ -332,7 +338,6 @@
                   </div>
                 </div>
 
-                <!-- BLOQUE 2: SLOTS DE LA MOCHILA (Si hay equipada) -->
                 <div v-if="extraBackpackSlots > 0">
                   <div class="backpack-separator">
                     <iconify-icon icon="game-icons:backpack"></iconify-icon>
@@ -371,7 +376,6 @@
                           </div>
                         </div>
 
-                        <!-- ICONO DE SIM EN MOCHILA -->
                         <div
                           v-if="getItemInSlot((basePlayerSlots + extraSlot), 'player').name === 'phone' && getItemInSlot((basePlayerSlots + extraSlot), 'player').hasSim"
                           class="sim-overlay-icon"
@@ -453,7 +457,6 @@
                 </button>
               </div>
 
-              <!-- PANEL ROCKSTAR EDITOR -->
               <div
                 class="clothing-action-pane custom-scrollbar"
                 v-if="rockstarPanelOpen"
@@ -1307,119 +1310,255 @@
           </div>
         </div>
 
-        <div class="inventory-section other-inventory-section" v-if="!isOtherInventoryEmpty">
-          <div class="page-header modern-header" style="border-bottom: none">
-            <div class="section-title">
-              <div class="title-icon-wrap">
-                <iconify-icon icon="mdi:archive"></iconify-icon>
+        <div
+          class="secondary-panels-wrapper"
+          :class="{
+            'middle-pair-column': panelPlacementPlan.mode === 'inv-right-pair-mid',
+            'as-contents': panelPlacementPlan.mode !== 'inv-right-pair-mid'
+          }">
+          <div class="inventory-section other-inventory-section" v-if="!isOtherInventoryEmpty">
+            <div class="page-header modern-header" style="border-bottom: none">
+              <div class="section-title">
+                <div class="title-icon-wrap">
+                  <iconify-icon icon="mdi:archive"></iconify-icon>
+                </div>
+                <div class="title-text">
+                  <h2>
+                    {{ otherInventoryName.startsWith('trunk') ? 'MALETERO' :
+                    otherInventoryName.startsWith('glovebox') ? 'GUANTERA' :
+                    otherInventoryName.startsWith('stash') ? 'ALMACÉN' :
+                    otherInventoryName.startsWith('drop') ? 'SUELO' :
+                    otherInventoryName.startsWith('otherplayer') ? 'INVENTARIO ' :
+                    otherInventoryLabel }}
+                  </h2>
+                  <p>
+                    <span class="badge-count">
+                      {{ otherInventoryName.startsWith('otherplayer') ?
+                      otherInventoryLabel.toUpperCase() : otherInventoryName.toUpperCase() }}
+                    </span>
+                  </p>
+                </div>
               </div>
-              <div class="title-text">
-                <h2>
-                  {{ otherInventoryName.startsWith('trunk') ? 'MALETERO' :
-                  otherInventoryName.startsWith('glovebox') ? 'GUANTERA' :
-                  otherInventoryName.startsWith('stash') ? 'ALMACÉN' :
-                  otherInventoryName.startsWith('drop') ? 'SUELO' :
-                  otherInventoryName.startsWith('otherplayer') ? 'INVENTARIO ' :
-                  otherInventoryLabel }}
-                </h2>
-                <p>
-                  <span class="badge-count">
-                    {{ otherInventoryName.startsWith('otherplayer') ?
-                    otherInventoryLabel.toUpperCase() : otherInventoryName.toUpperCase() }}
-                  </span>
-                </p>
+
+              <div class="header-actions">
+                <div
+                  v-if="!showOtherSearch"
+                  class="weight-icon-btn"
+                  @click="toggleOtherSearch()"
+                  v-tooltip.bottom="'Buscar ítem'">
+                  <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
+                </div>
               </div>
             </div>
-
-            <div class="header-actions">
+            <div class="weight-row" v-if="!isShopInventory && otherInventoryMaxWeight > 0">
               <div
-                v-if="!showOtherSearch"
-                class="weight-icon-btn"
-                @click="toggleOtherSearch()"
-                v-tooltip.bottom="'Buscar ítem'">
-                <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
-              </div>
-
-              <div
-                class="weight-icon-btn"
-                v-tooltip.bottom="'Peso: ' + (otherInventoryWeight / 1000).toFixed(1) + ' / ' + (otherInventoryMaxWeight / 1000).toFixed(1) + ' KG'">
+                class="weight-icon-mini"
+                v-tooltip.bottom="{ content: generateWeightTooltip(otherInventoryWeight, otherInventoryMaxWeight), html: true }">
                 <iconify-icon icon="mdi:weight"></iconify-icon>
               </div>
-            </div>
-          </div>
-          <div class="weight-bar">
-            <div
-              class="weight-bar-fill"
-              :style="{ width: Math.min((otherInventoryWeight / otherInventoryMaxWeight) * 100, 100) + '%' }"
-              :class="otherWeightBarClass"></div>
-          </div>
-          <div class="dropdown-search-row" :class="{ 'open': showOtherSearch }">
-            <div class="dropdown-search-bar">
-              <iconify-icon
-                icon="material-symbols:search-rounded"
-                class="dropdown-search-icon"></iconify-icon>
-              <input
-                type="text"
-                id="other-search-input"
-                v-model="otherSearchQuery"
-                placeholder="Buscar ítem..."
-                autocomplete="off" />
-            </div>
-            <div
-              class="weight-icon-btn search-btn-active dropdown-search-close-btn"
-              @click="toggleOtherSearch()"
-              v-tooltip.bottom="'Cerrar búsqueda'">
-              <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
-            </div>
-          </div>
-
-          <div class="inventory-grid">
-            <div class="item-grid">
-              <div
-                v-for="slot in otherInventorySlots"
-                :key="slot"
-                class="item-slot"
-                :data-slot="slot"
-                :class="{ 'slot-dimmed': !matchesSearch(getItemInSlot(slot, 'other'), otherSearchQuery) }"
-                @mousedown="event => handleMouseDown(event, slot, 'other')"
-                @dragover.prevent>
-                <template v-if="getItemInSlot(slot, 'other')">
-                  <div
-                    class="item-slot-img"
-                    v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'other')), html: true}">
-                    <img
-                      v-if="!isImageMissing(getItemInSlot(slot, 'other').image)"
-                      :src="'images/' + getItemInSlot(slot, 'other').image"
-                      @error="handleImageError(getItemInSlot(slot, 'other').image)"
-                      alt="" />
-                    <div v-else class="missing-img-placeholder">
-                      <iconify-icon
-                        icon="mdi:image-off-outline"
-                        class="missing-img-icon"></iconify-icon>
-                      <span>SIN FOTO</span>
-                    </div>
-                  </div>
-                  <div class="item-slot-amount" v-if="getItemInSlot(slot, 'other').amount > 1">
-                    <p>x{{ getItemInSlot(slot, 'other').amount }}</p>
-                  </div>
-                  <div v-if="isShopInventory" class="item-price">
-                    <p>${{ getItemInSlot(slot, 'other').price }}</p>
-                  </div>
-                  <div
-                    class="item-slot-durability"
-                    v-if="getItemInSlot(slot, 'other').info && 'quality' in getItemInSlot(slot, 'other').info">
-                    <div
-                      class="item-slot-durability-fill"
-                      :style="{ width: getDurabilityPercentage(getItemInSlot(slot, 'other')) + '%' }"
-                      :class="getDurabilityClass(getItemInSlot(slot, 'other'))"></div>
-                  </div>
-                </template>
+              <div class="weight-bar">
+                <div
+                  class="weight-bar-fill"
+                  :style="{ width: Math.min((otherInventoryWeight / otherInventoryMaxWeight) * 100, 100) + '%' }"
+                  :class="otherWeightBarClass"></div>
               </div>
             </div>
+            <div class="dropdown-search-row" :class="{ 'open': showOtherSearch }">
+              <div class="dropdown-search-bar">
+                <iconify-icon
+                  icon="material-symbols:search-rounded"
+                  class="dropdown-search-icon"></iconify-icon>
+                <input
+                  type="text"
+                  id="other-search-input"
+                  v-model="otherSearchQuery"
+                  placeholder="Buscar ítem..."
+                  autocomplete="off" />
+              </div>
+              <div
+                class="weight-icon-btn search-btn-active dropdown-search-close-btn"
+                @click="toggleOtherSearch()"
+                v-tooltip.bottom="'Cerrar búsqueda'">
+                <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+              </div>
+            </div>
+
+            <div class="inventory-grid">
+              <div class="item-grid">
+                <div
+                  v-for="slot in visibleOtherSlots"
+                  :key="slot"
+                  class="item-slot"
+                  :data-slot="slot"
+                  :class="{
+                    'slot-dimmed': !matchesSearch(getItemInSlot(slot, 'other'), otherSearchQuery),
+                    'slot-fogged': isSlotFogged(slot, 'other'),
+                    'slot-revealing': isSlotRevealing(slot, 'other')
+                  }"
+                  @mousedown="event => handleMouseDown(event, slot, 'other')"
+                  @dragover.prevent>
+                  <template v-if="getItemInSlot(slot, 'other')">
+                    <div v-if="isSlotFogged(slot, 'other')" class="fog-overlay">
+                      <div v-if="isSlotRevealing(slot, 'other')" class="fog-spinner"></div>
+                      <span v-else class="fog-q">?</span>
+                    </div>
+                    <template v-else>
+                      <div
+                        class="item-slot-img"
+                        v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'other')), html: true}">
+                        <img
+                          v-if="!isImageMissing(getItemInSlot(slot, 'other').image)"
+                          :src="'images/' + getItemInSlot(slot, 'other').image"
+                          @error="handleImageError(getItemInSlot(slot, 'other').image)"
+                          alt="" />
+                        <div v-else class="missing-img-placeholder">
+                          <iconify-icon
+                            icon="mdi:image-off-outline"
+                            class="missing-img-icon"></iconify-icon>
+                          <span>SIN FOTO</span>
+                        </div>
+                      </div>
+                      <div
+                        class="item-slot-amount"
+                        v-if="getItemInSlot(slot, 'other').amount > 1">
+                        <p>x{{ getItemInSlot(slot, 'other').amount }}</p>
+                      </div>
+                      <div v-if="isShopInventory" class="item-price">
+                        <p>${{ getItemInSlot(slot, 'other').price }}</p>
+                      </div>
+                      <div
+                        class="item-slot-durability"
+                        v-if="getItemInSlot(slot, 'other').info && 'quality' in getItemInSlot(slot, 'other').info">
+                        <div
+                          class="item-slot-durability-fill"
+                          :style="{ width: getDurabilityPercentage(getItemInSlot(slot, 'other')) + '%' }"
+                          :class="getDurabilityClass(getItemInSlot(slot, 'other'))"></div>
+                      </div>
+                    </template>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="menu-footer" style="position: relative">
+              <div class="desarrollo">Desarrollado por <strong>DP-Scripts</strong></div>
+            </div>
           </div>
 
-          <div class="menu-footer" style="position: relative">
-            <div class="desarrollo">Desarrollado por <strong>DP-Scripts</strong></div>
+          <div class="inventory-section bag-inventory-section" v-if="!isBagInventoryEmpty">
+            <div class="page-header modern-header" style="border-bottom: none">
+              <div class="section-title">
+                <div class="title-icon-wrap">
+                  <iconify-icon icon="mdi:bag-personal"></iconify-icon>
+                </div>
+                <div class="title-text">
+                  <h2>{{ bagInventoryLabel || 'MOCHILA' }}</h2>
+                  <p>
+                    <span class="badge-count">{{ bagInventoryName.toUpperCase() }}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div class="header-actions">
+                <div
+                  v-if="!showBagSearch"
+                  class="weight-icon-btn"
+                  @click="toggleBagSearch()"
+                  v-tooltip.bottom="'Buscar ítem'">
+                  <iconify-icon icon="material-symbols:search-rounded"></iconify-icon>
+                </div>
+              </div>
+            </div>
+            <div class="weight-row" v-if="bagInventoryMaxWeight > 0">
+              <div
+                class="weight-icon-mini"
+                v-tooltip.bottom="{ content: generateWeightTooltip(bagInventoryWeight, bagInventoryMaxWeight), html: true }">
+                <iconify-icon icon="mdi:weight"></iconify-icon>
+              </div>
+              <div class="weight-bar">
+                <div
+                  class="weight-bar-fill"
+                  :style="{ width: Math.min((bagInventoryWeight / bagInventoryMaxWeight) * 100, 100) + '%' }"
+                  :class="bagWeightBarClass"></div>
+              </div>
+            </div>
+            <div class="dropdown-search-row" :class="{ 'open': showBagSearch }">
+              <div class="dropdown-search-bar">
+                <iconify-icon
+                  icon="material-symbols:search-rounded"
+                  class="dropdown-search-icon"></iconify-icon>
+                <input
+                  type="text"
+                  id="bag-search-input"
+                  v-model="bagSearchQuery"
+                  placeholder="Buscar ítem..."
+                  autocomplete="off" />
+              </div>
+              <div
+                class="weight-icon-btn search-btn-active dropdown-search-close-btn"
+                @click="toggleBagSearch()"
+                v-tooltip.bottom="'Cerrar búsqueda'">
+                <iconify-icon icon="material-symbols:close-rounded"></iconify-icon>
+              </div>
+            </div>
+
+            <div class="inventory-grid custom-scrollbar">
+              <div class="item-grid">
+                <div
+                  v-for="slot in bagInventorySlots"
+                  :key="slot"
+                  class="item-slot"
+                  :data-slot="slot"
+                  :class="{
+                    'slot-dimmed': !matchesSearch(getItemInSlot(slot, 'bag'), bagSearchQuery),
+                    'slot-fogged': isSlotFogged(slot, 'bag'),
+                    'slot-revealing': isSlotRevealing(slot, 'bag')
+                  }"
+                  @mousedown="event => handleMouseDown(event, slot, 'bag')"
+                  @dragover.prevent>
+                  <template v-if="getItemInSlot(slot, 'bag')">
+                    <div v-if="isSlotFogged(slot, 'bag')" class="fog-overlay">
+                      <div v-if="isSlotRevealing(slot, 'bag')" class="fog-spinner"></div>
+                      <span v-else class="fog-q">?</span>
+                    </div>
+                    <template v-else>
+                      <div
+                        class="item-slot-img"
+                        v-tooltip.right-end="{content: generateTooltipContent(getItemInSlot(slot, 'bag')), html: true}">
+                        <img
+                          v-if="!isImageMissing(getItemInSlot(slot, 'bag').image)"
+                          :src="'images/' + getItemInSlot(slot, 'bag').image"
+                          @error="handleImageError(getItemInSlot(slot, 'bag').image)"
+                          alt="" />
+                        <div v-else class="missing-img-placeholder">
+                          <iconify-icon
+                            icon="mdi:image-off-outline"
+                            class="missing-img-icon"></iconify-icon>
+                          <span>SIN FOTO</span>
+                        </div>
+                      </div>
+                      <div
+                        class="item-slot-amount"
+                        v-if="getItemInSlot(slot, 'bag').amount > 1">
+                        <p>x{{ getItemInSlot(slot, 'bag').amount }}</p>
+                      </div>
+                      <div
+                        class="item-slot-durability"
+                        v-if="getItemInSlot(slot, 'bag').info && 'quality' in getItemInSlot(slot, 'bag').info">
+                        <div
+                          class="item-slot-durability-fill"
+                          :style="{ width: getDurabilityPercentage(getItemInSlot(slot, 'bag')) + '%' }"
+                          :class="getDurabilityClass(getItemInSlot(slot, 'bag'))"></div>
+                      </div>
+                    </template>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="menu-footer" style="position: relative">
+              <div class="desarrollo">Desarrollado por <strong>DP-Scripts</strong></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1524,17 +1663,13 @@
       </div>
 
       <div class="weapon-inspection-panel" v-if="showWeaponAttachments">
-        <!-- Header -->
         <div class="wip-header">
           <span class="wip-title">Inspección de Arma</span>
           <span class="wip-close" @click="openWeaponAttachments()">✕</span>
         </div>
 
-        <!-- Body -->
         <div class="wip-body">
-          <!-- Left: weapon preview -->
           <div class="wip-preview">
-            <!-- Imagen centrada grande -->
             <div class="wip-img-wrap">
               <img
                 v-if="!isImageMissing(selectedWeapon.image)"
@@ -1550,13 +1685,10 @@
               </div>
             </div>
 
-            <!-- Nombre del arma -->
             <div class="wip-weapon-name">{{ selectedWeapon.label }}</div>
 
-            <!-- Spacer empuja serial y quality al fondo -->
             <div class="wip-preview-spacer"></div>
 
-            <!-- Número de serie + botón copiar -->
             <div
               class="wip-serial-row"
               v-if="selectedWeapon.info && selectedWeapon.info.serie">
@@ -1572,7 +1704,6 @@
               </button>
             </div>
 
-            <!-- Barra de calidad al fondo -->
             <div
               class="wip-quality-row"
               v-if="selectedWeapon.info && selectedWeapon.info.quality !== undefined">
@@ -1591,7 +1722,6 @@
             </div>
           </div>
 
-          <!-- Right: attachment slots -->
           <div class="wip-slots">
             <div class="wip-slots-title">RANURAS DE ACCESORIOS</div>
 
@@ -1674,7 +1804,6 @@
             <span>USE</span>
           </li>
 
-          <!-- OPCIONES DE SIM -->
           <li
             v-if="canCombineSim(contextMenuItem)"
             @click="startSimCombine(contextMenuItem, 'player')">

@@ -187,7 +187,7 @@ DP-Inventory
 | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | <img src="https://placehold.co/20x20/555555/FFFFFF?text=FW" alt="FW"> **QB-Core**   | 🔴 OBLIGATORIO                                                       |
 | <img src="https://placehold.co/20x20/555555/FFFFFF?text=SQL" alt="SQL"> **oxmysql** | 🔴 OBLIGATORIO                                                       |
-| <img src="https://placehold.co/20x20/555555/FFFFFF?text=DP" alt="DP"> **DP-TextUI** | 🔴 OBLIGATORIO (Para los botones de interación con las bolsas/items) |
+| <img src="https://placehold.co/20x20/555555/FFFFFF?text=DP" alt="DP"> **DP-Hud** | 🔴 OBLIGATORIO (Para los botones de interación con las bolsas/items) |
 
 </details>
 <br><br>

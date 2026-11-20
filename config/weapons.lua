@@ -1,3 +1,5 @@
+-- DP-Inventory · config/weapons.lua
+
 Config = Config or {}
 
 Config.WeaponReloadTime = math.random(4000, 6000)
@@ -44,20 +46,17 @@ Config.Throwables = {'ball', 'bzgas', 'flare', 'grenade', 'molotov', 'pipebomb',
 
 Config.WeapDraw = {
     variants = {130, 122, 3, 6, 8},
-    weapons = { -- 'WEAPON_STUNGUN',
+    weapons = {
     'WEAPON_PISTOL', 'WEAPON_PISTOL_MK2', 'WEAPON_COMBATPISTOL', 'WEAPON_APPISTOL', 'WEAPON_PISTOL50',
     'WEAPON_REVOLVER', 'WEAPON_SNSPISTOL', 'WEAPON_HEAVYPISTOL', 'WEAPON_VINTAGEPISTOL'}
 }
 
 Config.DurabilityMultiplier = {
-    -- Melee
-    -- weapon_unarmed 				 = 0.15,
     weapon_dagger = 0.15,
     weapon_bat = 0.15,
     weapon_bottle = 0.15,
     weapon_crowbar = 0.15,
     weapon_candycane = 0.15,
-    -- weapon_flashlight 			 = 0.15,
     weapon_golfclub = 0.15,
     weapon_hammer = 0.15,
     weapon_hatchet = 0.15,
@@ -65,7 +64,6 @@ Config.DurabilityMultiplier = {
     weapon_knife = 0.15,
     weapon_machete = 0.15,
     weapon_switchblade = 0.15,
-    -- weapon_nightstick 			 = 0.15,
     weapon_wrench = 0.15,
     weapon_battleaxe = 0.15,
     weapon_poolcue = 0.15,
@@ -76,13 +74,10 @@ Config.DurabilityMultiplier = {
     weapon_bread = 0.15,
     weapon_stone_hatchet = 0.15,
 
-    -- Handguns
     weapon_pistol = 0.15,
     weapon_pistol_mk2 = 0.15,
     weapon_combatpistol = 0.15,
     weapon_appistol = 0.15,
-    -- weapon_stungun 				 = 0.15,
-    -- weapon_stungun_mp 				 = 0.15,
     weapon_pistol50 = 0.15,
     weapon_snspistol = 0.15,
     weapon_heavypistol = 0.15,
@@ -99,7 +94,6 @@ Config.DurabilityMultiplier = {
     weapon_gadgetpistol = 0.15,
     weapon_pistolxm3 = 0.15,
 
-    -- Submachine Guns
     weapon_microsmg = 0.15,
     weapon_smg = 0.15,
     weapon_smg_mk2 = 0.15,
@@ -109,7 +103,6 @@ Config.DurabilityMultiplier = {
     weapon_minismg = 0.15,
     weapon_raycarbine = 0.15,
 
-    -- Shotguns
     weapon_pumpshotgun = 0.15,
     weapon_sawnoffshotgun = 0.15,
     weapon_assaultshotgun = 0.15,
@@ -121,7 +114,6 @@ Config.DurabilityMultiplier = {
     weapon_pumpshotgun_mk2 = 0.15,
     weapon_combatshotgun = 0.15,
 
-    -- Assault Rifles
     weapon_assaultrifle = 0.15,
     weapon_assaultrifle_mk2 = 0.15,
     weapon_carbinerifle = 0.15,
@@ -135,13 +127,11 @@ Config.DurabilityMultiplier = {
     weapon_militaryrifle = 0.15,
     weapon_heavyrifle = 0.15,
 
-    -- Light Machine Guns
     weapon_mg = 0.15,
     weapon_combatmg = 0.15,
     weapon_gusenberg = 0.15,
     weapon_combatmg_mk2 = 0.15,
 
-    -- Sniper Rifles
     weapon_sniperrifle = 0.15,
     weapon_heavysniper = 0.15,
     weapon_marksmanrifle = 0.15,
@@ -149,7 +139,6 @@ Config.DurabilityMultiplier = {
     weapon_heavysniper_mk2 = 0.15,
     weapon_marksmanrifle_mk2 = 0.15,
 
-    -- Heavy Weapons
     weapon_rpg = 0.15,
     weapon_grenadelauncher = 0.15,
     weapon_grenadelauncher_smoke = 0.15,
@@ -162,7 +151,6 @@ Config.DurabilityMultiplier = {
     weapon_rayminigun = 0.15,
     weapon_railgunxm3 = 0.15,
 
-    -- Throwables
     weapon_grenade = 0.15,
     weapon_bzgas = 0.15,
     weapon_molotov = 0.15,
@@ -174,13 +162,11 @@ Config.DurabilityMultiplier = {
     weapon_smokegrenade = 0.15,
     weapon_flare = 0.15,
 
-    -- Miscellaneous
     weapon_petrolcan = 0.15,
     weapon_fireextinguisher = 0.15,
     weapon_hazardcan = 0.15,
     weapon_fertilizercan = 0.15,
 
-    -- GD-Weapons
     WEAPON_uzi = 0.15,
     WEAPON_mac10 = 0.15,
     WEAPON_groza = 0.15,
@@ -193,7 +179,6 @@ Config.DurabilityMultiplier = {
     WEAPON_m4 = 0.15,
     weapon_sledgehammer = 0.15,
 
-    -- Kyros Weapon Pack Airsoft
     weapon_airsoftak47 = 0.10,
     weapon_airsoftg36c = 0.10,
     weapon_airsoftglock = 0.10,
@@ -210,20 +195,17 @@ Config.DurabilityMultiplier = {
     weapon_airsoftfn57 = 0.10,
     weapon_airsoftp90 = 0.10,
 
-    -- Individuales
     weapon_kruk = 0.15,
     weapon_mand = 0.15,
     weapon_pan = 0.15,
     weapon_spatel = 0.15,
 
-    -- Armas DLC GTA V
     weapon_stunrod = 0.15,
     weapon_tecpistol = 0.15,
     weapon_tacticalrifle = 0.15,
     weapon_precisionrifle = 0.15,
     weapon_acidpackage = 0.15,
 
-    -- Pack Custom Melee
     weapon_blackdilly = 0.15,
     weapon_btomahawk = 0.15,
     weapon_brick = 0.15,
