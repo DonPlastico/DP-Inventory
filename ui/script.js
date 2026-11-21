@@ -279,35 +279,27 @@ const InventoryContainer = Vue.createApp({
         maxWeight: 0,
         totalSlots: 0,
         baseSlots: 0,
-
         isInventoryOpen: false,
-
+        isClosingInventory: false,
         isOtherInventoryEmpty: true,
-
         errorSlot: null,
-
         failedImages: {},
-
         playerInventory: {},
         inventoryLabel: "Inventory",
         totalWeight: 0,
-
         otherInventory: {},
         otherInventoryName: "",
         otherInventoryLabel: "Drop",
         otherInventoryMaxWeight: 1000000,
         otherInventorySlots: 100,
         isShopInventory: false,
-
         bagInventory: {},
         bagInventoryName: "",
         bagInventoryLabel: "",
         bagInventoryMaxWeight: 0,
         bagInventorySlots: 0,
         isBagInventoryEmpty: true,
-
         inventory: "",
-
         showContextMenu: false,
         contextMenuPosition: { top: "0px", left: "0px" },
         contextMenuItem: null,
@@ -315,34 +307,27 @@ const InventoryContainer = Vue.createApp({
         isMenuOnLeft: false,
         isMenuOnTop: false,
         nearbyPlayers: [],
-
         showInspectModal: false,
         inspectingItem: null,
         inspectRotation: 0,
         inspectZoom: 1,
-
         showHotbar: false,
         hotbarItems: [],
         activeHotbarSlot: null,
-
         itemNotifications: [],
-
         showRequiredItems: false,
         requiredItems: [],
-
         selectedWeapon: null,
         showWeaponAttachments: false,
         selectedWeaponAttachments: [],
         wipDragOverSlot: null,
         wipErrorSlot: null,
-
         simCombineState: {
           isActive: false,
           sourceSlot: null,
           sourceInventory: null,
           sourceItemName: null,
         },
-
         wipAttachmentSlots: [
           {
             type: "suppressor",
@@ -409,7 +394,6 @@ const InventoryContainer = Vue.createApp({
             ],
           },
         ],
-
         currentlyDraggingItem: null,
         currentlyDraggingSlot: null,
         dragStartX: 0,
@@ -418,30 +402,23 @@ const InventoryContainer = Vue.createApp({
         dragStartInventoryType: "player",
         transferAmount: null,
         isCtrlDrag: false,
-
         activeTab: localStorage.getItem("dp_inv_activeTab") || "inventory",
         isDriver: false,
         isInventoryReady: false,
-
         rockstarPanelOpen: false,
-
         isAdmin: false,
         adminData: null,
         adminCurrentCategory: null,
         adminSearchQuery: "",
         showAdminSearch: false,
-
         cursorModeActive: false,
         moveWhileOpen: false,
-
         inVehicle: false,
         vehicleSeat: null,
         vehicleData: null,
-
         inventoryPosition: "left",
         isSettingsSelectOpen: false,
         selectDropdownStyle: {},
-
         inventoryGuideList: [
           {
             id: 1,
@@ -519,14 +496,12 @@ const InventoryContainer = Vue.createApp({
 
         uiSoundsEnabled: true,
         currentSoundType: "inv",
-
         playerSearchQuery: "",
         showPlayerSearch: false,
         otherSearchQuery: "",
         showOtherSearch: false,
         bagSearchQuery: "",
         showBagSearch: false,
-
         hasVehicleRadio: false,
         bagPreviewCache: {},
         bagPreviewPending: {},
@@ -542,29 +517,24 @@ const InventoryContainer = Vue.createApp({
       this.inventoryPosition = data.invPosition || "left";
 
       this.isInventoryOpen = true;
+      this.isClosingInventory = false;
       this.maxWeight = data.maxweight;
       this.totalSlots = data.slots;
       this.baseSlots = data.slots;
-
       this.isDriver = data.isDriver || false;
       this.inVehicle = data.inVehicle || false;
       this.vehicleSeat = data.vehicleSeat !== undefined ? data.vehicleSeat : null;
       this.vehicleData = data.vehData || null;
-
       this.inventoryLabel = data.playerName ? data.playerName.toUpperCase() : "INVENTARIO";
-
       this.playerInventory = {};
       this.otherInventory = {};
-
       this.bagInventory = {};
       this.bagInventoryName = "";
       this.bagInventoryLabel = "";
       this.bagInventoryMaxWeight = 0;
       this.bagInventorySlots = 0;
       this.isBagInventoryEmpty = true;
-
       this.isAdmin = data.isAdmin || false;
-
       this.moveWhileOpen = data.moveWhileOpen || false;
 
       if (data.inventory) {
@@ -639,6 +609,7 @@ const InventoryContainer = Vue.createApp({
       if (this.showHotbar) this.toggleHotbar(false);
       if (data.invPosition) this.inventoryPosition = data.invPosition;
       this.isInventoryOpen = true;
+      this.isClosingInventory = false;
       if (data.maxweight !== undefined) this.maxWeight = data.maxweight;
       if (data.slots !== undefined) {
         this.totalSlots = data.slots;
@@ -719,6 +690,9 @@ const InventoryContainer = Vue.createApp({
     },
 
     async closeInventory() {
+      if (this.isClosingInventory) return;
+      this.isClosingInventory = true;
+
       this.bagPreviewCache = {};
       this.bagPreviewPending = {};
       if (document.activeElement) document.activeElement.blur();
@@ -753,6 +727,7 @@ const InventoryContainer = Vue.createApp({
       this.moveWhileOpen = currentMoveState;
       this.itemNotifications = currentNotifications;
       this.revealMaps = currentRevealMaps;
+      this.isClosingInventory = true;
 
       try {
         await axios.post("https://DP-Inventory/CloseInventory", {
@@ -761,6 +736,8 @@ const InventoryContainer = Vue.createApp({
         });
       } catch (error) {
         console.error("Error closing inventory:", error);
+      } finally {
+        this.isClosingInventory = false;
       }
     },
 
@@ -3376,6 +3353,7 @@ const InventoryContainer = Vue.createApp({
       const key = event.key;
 
       if (key === "Escape" || key === "F2") {
+        if (this.isClosingInventory) return;
         if (this.simCombineState.isActive) {
           this.cancelSimCombine();
         } else if (this.isInventoryOpen) {

@@ -325,6 +325,7 @@ end)
 RegisterNetEvent('DP-Inventory:client:openInventory', function(items, other)
     isInventoryOpen = true
     UpdateNuiFocus()
+    blockPauseMenuTimer = GetGameTimer() + 800
 
     if other then
         isOtherInventoryOpen = true
@@ -419,6 +420,7 @@ end)
 RegisterNetEvent('DP-Inventory:client:openBagInventory', function(items, bagData)
     isInventoryOpen = true
     UpdateNuiFocus()
+    blockPauseMenuTimer = GetGameTimer() + 800
 
     local charName = "INVENTARIO"
     if PlayerData and PlayerData.charinfo then
@@ -673,7 +675,7 @@ CreateThread(function()
 
         if isInventoryOpen then
             sleep = 0
-            blockPauseMenuTimer = GetGameTimer() + 400
+            blockPauseMenuTimer = GetGameTimer() + 800
 
             if not isTypingInUI then
                 DisableControlAction(0, 24, true)
@@ -690,6 +692,7 @@ CreateThread(function()
         if GetGameTimer() < blockPauseMenuTimer then
             sleep = 0
             DisableControlAction(0, 200, true)
+            DisableControlAction(0, 199, true)
             DisableControlAction(0, 322, true)
         end
 
@@ -991,6 +994,13 @@ RegisterNUICallback('CloseInventory', function(data, cb)
     SetNuiFocus(false, false)
     isInventoryOpen = false
     isOtherInventoryOpen = false
+    blockPauseMenuTimer = GetGameTimer() + 800
+
+    if GetResourceState('DP-PauseMenu') == 'started' then
+        pcall(function()
+            exports['DP-PauseMenu']:NotifyNuiClosed()
+        end)
+    end
 
     if data.name then
         if data.name:find('trunk-') then
